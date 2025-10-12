@@ -10,11 +10,16 @@
   const urlInput = document.getElementById("urlInput");
   const btnRefresh = document.getElementById("btnRefresh");
   const btnConnect = document.getElementById("btnConnect");
-  const btnDisconnect = document.getElementById("btnDisconnect");
   const btnTest = document.getElementById("btnTest");
-  const volumeterCanvas = document.getElementById("volumeter");
-  const volumeterValue = document.getElementById("volumeterValue");
-  const volumeterCtx = volumeterCanvas.getContext("2d");
+
+  // Volumeter estéreo - Canvas y contextos
+  const volumeterCanvasLeft = document.getElementById("volumeterLeft");
+  const volumeterCanvasRight = document.getElementById("volumeterRight");
+  const volumeterValueLeft = document.getElementById("volumeterValueLeft");
+  const volumeterValueRight = document.getElementById("volumeterValueRight");
+  const volumeterCtxLeft = volumeterCanvasLeft.getContext("2d");
+  const volumeterCtxRight = volumeterCanvasRight.getContext("2d");
+
   const btnStreamInfo = document.getElementById("btnStreamInfo");
   const streamInfoModal = document.getElementById("streamInfoModal");
   const closeModal = document.getElementById("closeModal");
@@ -23,6 +28,7 @@
   const closeSettingsModal = document.getElementById("closeSettingsModal");
   const autostartToggle = document.getElementById("autostartToggle");
   const debugToggle = document.getElementById("debugToggle");
+  const autoConnectToggle = document.getElementById("autoConnectToggle");
   const fontSizeBtns = document.querySelectorAll(".font-size-btn");
 
   // Configuración por defecto
@@ -31,11 +37,13 @@
   const DEFAULT_RECONNECT_MS = 3000;
   const DEFAULT_VOLUME = 100;
   const DEFAULT_DEBUG = false;
+  const DEFAULT_AUTO_CONNECT = false;
 
   let WHEP_URL = "";
   let RECONNECT_MS = DEFAULT_RECONNECT_MS;
   let VOLUME = DEFAULT_VOLUME;
   let DEBUG_MODE = DEFAULT_DEBUG;
+  let AUTO_CONNECT = DEFAULT_AUTO_CONNECT;
   let pc = null;
   let abortReconnect = false;
 
@@ -46,8 +54,10 @@
   let destinationNode = null; // MediaStreamDestination para setSinkId
   let isAudioSetup = false; // Flag para evitar recrear MediaElementSource
 
-  // Para análisis de volumen (volumeter)
-  let analyserNode = null;
+  // Para análisis de volumen (volumeter estéreo)
+  let analyserNodeLeft = null;
+  let analyserNodeRight = null;
+  let splitterNode = null;
   let volumeterAnimationId = null;
 
   // Para "Probar tono"
@@ -90,15 +100,21 @@
         "DEBUG_MODE",
         String(DEFAULT_DEBUG)
       );
+      const savedAutoConnect = await window.webrtcCfg.get(
+        "AUTO_CONNECT",
+        String(DEFAULT_AUTO_CONNECT)
+      );
 
       WHEP_URL = savedUrl;
       RECONNECT_MS = parseInt(savedReconnect, 10);
       VOLUME = parseInt(savedVolume, 10);
       DEBUG_MODE = savedDebug === "true" || savedDebug === true;
+      AUTO_CONNECT = savedAutoConnect === "true" || savedAutoConnect === true;
 
       urlInput.value = WHEP_URL;
       volumeSlider.value = VOLUME;
       debugToggle.checked = DEBUG_MODE;
+      autoConnectToggle.checked = AUTO_CONNECT;
       updateVolumeDisplay();
 
       if (DEBUG_MODE) {
@@ -109,9 +125,11 @@
       WHEP_URL = DEFAULT_WHEP_URL;
       VOLUME = DEFAULT_VOLUME;
       DEBUG_MODE = DEFAULT_DEBUG;
+      AUTO_CONNECT = DEFAULT_AUTO_CONNECT;
       urlInput.value = WHEP_URL;
       volumeSlider.value = VOLUME;
       debugToggle.checked = DEBUG_MODE;
+      autoConnectToggle.checked = AUTO_CONNECT;
       updateVolumeDisplay();
     }
   }
@@ -156,98 +174,177 @@
     }
   }
 
-  // === Funciones del Volumeter ===
-  let currentLevel = 0; // Nivel actual para suavizado
-  let peakLevel = 0; // Nivel pico para mantener picos visibles
-  let peakHoldTime = 0; // Tiempo de retención del pico
-  let currentDb = -Infinity; // dB actual para suavizado
+  // === Funciones del Volumeter Estéreo ===
+  // Canal izquierdo
+  let currentLevelLeft = 0;
+  let peakLevelLeft = 0;
+  let peakHoldTimeLeft = 0;
+  let currentDbLeft = -Infinity;
+
+  // Canal derecho
+  let currentLevelRight = 0;
+  let peakLevelRight = 0;
+  let peakHoldTimeRight = 0;
+  let currentDbRight = -Infinity;
 
   function startVolumeter() {
-    if (volumeterAnimationId || !analyserNode) {
-      debugLog("Volumeter ya iniciado o analyserNode no disponible");
+    if (volumeterAnimationId || !analyserNodeLeft || !analyserNodeRight) {
+      debugLog("Volumeter ya iniciado o analyserNodes no disponibles");
       return;
     }
 
-    const bufferLength = analyserNode.fftSize;
-    const dataArray = new Uint8Array(bufferLength);
+    const bufferLength = analyserNodeLeft.fftSize;
+    const dataArrayLeft = new Uint8Array(bufferLength);
+    const dataArrayRight = new Uint8Array(bufferLength);
 
     // Resetear valores de suavizado
-    currentLevel = 0;
-    peakLevel = 0;
-    peakHoldTime = 0;
-    currentDb = -Infinity;
+    currentLevelLeft = 0;
+    peakLevelLeft = 0;
+    peakHoldTimeLeft = 0;
+    currentDbLeft = -Infinity;
 
-    debugLog("Volumeter iniciado - Buffer length:", bufferLength);
+    currentLevelRight = 0;
+    peakLevelRight = 0;
+    peakHoldTimeRight = 0;
+    currentDbRight = -Infinity;
+
+    debugLog("Volumeter estéreo iniciado - Buffer length:", bufferLength);
 
     function draw() {
       volumeterAnimationId = requestAnimationFrame(draw);
 
-      // Usar getByteTimeDomainData para análisis de forma de onda (mejor para VU meter)
-      analyserNode.getByteTimeDomainData(dataArray);
+      // Obtener datos de ambos canales
+      analyserNodeLeft.getByteTimeDomainData(dataArrayLeft);
+      analyserNodeRight.getByteTimeDomainData(dataArrayRight);
 
       // Debug: Ver primeros valores del array
       if (DEBUG_MODE && Math.random() < 0.002) {
         debugLog(
-          "Primeros 10 valores del array:",
-          Array.from(dataArray.slice(0, 10))
+          "Left channel sample:",
+          Array.from(dataArrayLeft.slice(0, 5)),
+          "Right channel sample:",
+          Array.from(dataArrayRight.slice(0, 5))
         );
       }
 
-      // Calcular RMS (Root Mean Square) para nivel de volumen más preciso
-      let sum = 0;
+      // ========== CANAL IZQUIERDO ==========
+      let sumLeft = 0;
       for (let i = 0; i < bufferLength; i++) {
-        const normalized = (dataArray[i] - 128) / 128; // Normalizar de -1 a 1
-        sum += normalized * normalized;
+        const normalized = (dataArrayLeft[i] - 128) / 128;
+        sumLeft += normalized * normalized;
       }
-      const rms = Math.sqrt(sum / bufferLength);
+      const rmsLeft = Math.sqrt(sumLeft / bufferLength);
+      const instantLevelLeft = Math.min(rmsLeft * 5, 1.0);
 
-      // Convertir a escala 0-1 con mayor sensibilidad
-      const instantLevel = Math.min(rms * 5, 1.0);
+      // Suavizado exponencial
+      const smoothingFactorLeft =
+        instantLevelLeft > currentLevelLeft ? 0.3 : 0.1;
+      currentLevelLeft =
+        currentLevelLeft * (1 - smoothingFactorLeft) +
+        instantLevelLeft * smoothingFactorLeft;
 
-      // Suavizado exponencial para una animación más fluida
-      const smoothingFactor = instantLevel > currentLevel ? 0.3 : 0.1; // Subida rápida, bajada lenta
-      currentLevel =
-        currentLevel * (1 - smoothingFactor) + instantLevel * smoothingFactor;
-
-      // Mantener nivel de pico por un tiempo
-      if (instantLevel > peakLevel) {
-        peakLevel = instantLevel;
-        peakHoldTime = 30; // Mantener por 30 frames (~0.5 segundos a 60fps)
-      } else if (peakHoldTime > 0) {
-        peakHoldTime--;
+      // Mantener nivel de pico
+      if (instantLevelLeft > peakLevelLeft) {
+        peakLevelLeft = instantLevelLeft;
+        peakHoldTimeLeft = 30;
+      } else if (peakHoldTimeLeft > 0) {
+        peakHoldTimeLeft--;
       } else {
-        peakLevel = peakLevel * 0.95; // Caída lenta del pico
+        peakLevelLeft = peakLevelLeft * 0.95;
       }
 
-      // Calcular dB (aproximado)
-      let instantDb = -Infinity;
-      if (rms > 0.0001) {
-        instantDb = 20 * Math.log10(rms);
+      // Calcular dB
+      let instantDbLeft = -Infinity;
+      if (rmsLeft > 0.0001) {
+        instantDbLeft = 20 * Math.log10(rmsLeft);
       }
 
-      // Suavizado del valor de dB para el display
-      if (currentDb === -Infinity) {
-        currentDb = instantDb;
-      } else if (instantDb === -Infinity) {
-        currentDb = currentDb * 0.9; // Decae hacia -Infinity
+      // Suavizado del valor de dB
+      if (currentDbLeft === -Infinity) {
+        currentDbLeft = instantDbLeft;
+      } else if (instantDbLeft === -Infinity) {
+        currentDbLeft = currentDbLeft * 0.92;
+        if (currentDbLeft < -60) currentDbLeft = -Infinity;
       } else {
-        // Suavizado más agresivo para el texto (más lento que la barra visual)
-        const dbSmoothingFactor = instantDb > currentDb ? 0.15 : 0.08;
-        currentDb =
-          currentDb * (1 - dbSmoothingFactor) + instantDb * dbSmoothingFactor;
+        const dbSmoothingFactorLeft =
+          instantDbLeft > currentDbLeft ? 0.15 : 0.08;
+        currentDbLeft =
+          currentDbLeft * (1 - dbSmoothingFactorLeft) +
+          instantDbLeft * dbSmoothingFactorLeft;
+      }
+
+      // ========== CANAL DERECHO ==========
+      let sumRight = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const normalized = (dataArrayRight[i] - 128) / 128;
+        sumRight += normalized * normalized;
+      }
+      const rmsRight = Math.sqrt(sumRight / bufferLength);
+      const instantLevelRight = Math.min(rmsRight * 5, 1.0);
+
+      // Suavizado exponencial
+      const smoothingFactorRight =
+        instantLevelRight > currentLevelRight ? 0.3 : 0.1;
+      currentLevelRight =
+        currentLevelRight * (1 - smoothingFactorRight) +
+        instantLevelRight * smoothingFactorRight;
+
+      // Mantener nivel de pico
+      if (instantLevelRight > peakLevelRight) {
+        peakLevelRight = instantLevelRight;
+        peakHoldTimeRight = 30;
+      } else if (peakHoldTimeRight > 0) {
+        peakHoldTimeRight--;
+      } else {
+        peakLevelRight = peakLevelRight * 0.95;
+      }
+
+      // Calcular dB
+      let instantDbRight = -Infinity;
+      if (rmsRight > 0.0001) {
+        instantDbRight = 20 * Math.log10(rmsRight);
+      }
+
+      // Suavizado del valor de dB
+      if (currentDbRight === -Infinity) {
+        currentDbRight = instantDbRight;
+      } else if (instantDbRight === -Infinity) {
+        currentDbRight = currentDbRight * 0.92;
+        if (currentDbRight < -60) currentDbRight = -Infinity;
+      } else {
+        const dbSmoothingFactorRight =
+          instantDbRight > currentDbRight ? 0.15 : 0.08;
+        currentDbRight =
+          currentDbRight * (1 - dbSmoothingFactorRight) +
+          instantDbRight * dbSmoothingFactorRight;
       }
 
       // Log ocasional para debugging
       if (DEBUG_MODE && Math.random() < 0.005) {
         debugLog(
-          `RMS: ${rms.toFixed(4)}, Instant: ${instantLevel.toFixed(
-            3
-          )}, Smoothed: ${currentLevel.toFixed(3)}, dB: ${currentDb.toFixed(1)}`
+          `L: RMS=${rmsLeft.toFixed(4)}, dB=${currentDbLeft.toFixed(
+            1
+          )} | R: RMS=${rmsRight.toFixed(4)}, dB=${currentDbRight.toFixed(1)}`
         );
       }
 
-      // Dibujar en canvas (usar instantDb para colores precisos, currentDb para display)
-      drawVolumeter(currentLevel, peakLevel, instantDb, currentDb);
+      // Dibujar ambos canales
+      drawVolumeter(
+        volumeterCtxLeft,
+        volumeterValueLeft,
+        currentLevelLeft,
+        peakLevelLeft,
+        instantDbLeft,
+        currentDbLeft
+      );
+      drawVolumeter(
+        volumeterCtxRight,
+        volumeterValueRight,
+        currentLevelRight,
+        peakLevelRight,
+        instantDbRight,
+        currentDbRight
+      );
     }
 
     draw();
@@ -261,13 +358,37 @@
     }
   }
 
-  function drawVolumeter(level, peakLevel, instantDb, displayDb) {
-    const width = volumeterCanvas.width;
-    const height = volumeterCanvas.height;
+  function clearVolumeter() {
+    const width = volumeterCanvasLeft.width;
+    const height = volumeterCanvasLeft.height;
+
+    // Limpiar canal izquierdo
+    volumeterCtxLeft.fillStyle = "#151a22";
+    volumeterCtxLeft.fillRect(0, 0, width, height);
+    volumeterValueLeft.textContent = "-∞ dBFS";
+    volumeterValueLeft.style.color = "#2ecc71";
+
+    // Limpiar canal derecho
+    volumeterCtxRight.fillStyle = "#151a22";
+    volumeterCtxRight.fillRect(0, 0, width, height);
+    volumeterValueRight.textContent = "-∞ dBFS";
+    volumeterValueRight.style.color = "#2ecc71";
+  }
+
+  function drawVolumeter(
+    ctx,
+    valueElement,
+    level,
+    peakLevel,
+    instantDb,
+    displayDb
+  ) {
+    const width = ctx.canvas.width;
+    const height = ctx.canvas.height;
 
     // Limpiar canvas
-    volumeterCtx.fillStyle = "#151a22";
-    volumeterCtx.fillRect(0, 0, width, height);
+    ctx.fillStyle = "#151a22";
+    ctx.fillRect(0, 0, width, height);
 
     // Calcular ancho de la barra principal
     const barWidth = width * level;
@@ -291,7 +412,7 @@
     // Rojo desde orangeEnd hasta 1.0 (≥ -3 dBFS)
 
     // Crear gradiente con los estándares profesionales
-    let gradient = volumeterCtx.createLinearGradient(0, 0, width, 0);
+    let gradient = ctx.createLinearGradient(0, 0, width, 0);
     gradient.addColorStop(0, "#2ecc71"); // Verde desde el inicio
     gradient.addColorStop(greenEnd, "#2ecc71"); // Verde hasta -12 dBFS
     gradient.addColorStop(greenEnd, "#f1c40f"); // Inicio amarillo
@@ -303,8 +424,8 @@
 
     // Dibujar barra de nivel principal
     if (barWidth > 0) {
-      volumeterCtx.fillStyle = gradient;
-      volumeterCtx.fillRect(0, 0, Math.max(barWidth, 2), height);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, Math.max(barWidth, 2), height);
     }
 
     // Dibujar indicador de pico (línea vertical) usando los mismos estándares
@@ -321,47 +442,54 @@
       } else {
         peakColor = "#2ecc71"; // Verde: < -12 dBFS
       }
-      volumeterCtx.fillStyle = peakColor;
-      volumeterCtx.fillRect(peakWidth - 2, 0, 2, height);
+      ctx.fillStyle = peakColor;
+      ctx.fillRect(peakWidth - 2, 0, 2, height);
     }
 
     // Dibujar líneas de división (cada 10%)
-    volumeterCtx.strokeStyle = "#2a3240";
-    volumeterCtx.lineWidth = 1;
+    ctx.strokeStyle = "#2a3240";
+    ctx.lineWidth = 1;
     for (let i = 1; i < 10; i++) {
       const x = (width / 10) * i;
-      volumeterCtx.beginPath();
-      volumeterCtx.moveTo(x, 0);
-      volumeterCtx.lineTo(x, height);
-      volumeterCtx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
     }
 
     // Actualizar valor de dB (usar valor suavizado para el display)
     if (displayDb === -Infinity || displayDb < -60) {
-      volumeterValue.textContent = "-∞ dBFS";
+      valueElement.textContent = "-∞ dBFS";
     } else {
-      volumeterValue.textContent = `${displayDb.toFixed(1)} dBFS`;
+      valueElement.textContent = `${displayDb.toFixed(1)} dBFS`;
     }
 
     // Cambiar color del texto según estándares dBFS (usar valor suavizado)
     if (displayDb >= -3) {
-      volumeterValue.style.color = "#e74c3c"; // Rojo: ≥ -3 dBFS (peligro)
+      valueElement.style.color = "#e74c3c"; // Rojo: ≥ -3 dBFS (peligro)
     } else if (displayDb >= -6) {
-      volumeterValue.style.color = "#f39c12"; // Naranja: -6 a -3 dBFS
+      valueElement.style.color = "#f39c12"; // Naranja: -6 a -3 dBFS
     } else if (displayDb >= -12) {
-      volumeterValue.style.color = "#f1c40f"; // Amarillo: -12 a -6 dBFS
+      valueElement.style.color = "#f1c40f"; // Amarillo: -12 a -6 dBFS
     } else {
-      volumeterValue.style.color = "#2ecc71"; // Verde: < -12 dBFS (seguro)
+      valueElement.style.color = "#2ecc71"; // Verde: < -12 dBFS (seguro)
     }
   }
 
   function clearVolumeter() {
-    const width = volumeterCanvas.width;
-    const height = volumeterCanvas.height;
-    volumeterCtx.fillStyle = "#151a22";
-    volumeterCtx.fillRect(0, 0, width, height);
-    volumeterValue.textContent = "-∞ dB";
-    volumeterValue.style.color = "#2ecc71";
+    const widthLeft = volumeterCanvasLeft.width;
+    const heightLeft = volumeterCanvasLeft.height;
+    volumeterCtxLeft.fillStyle = "#151a22";
+    volumeterCtxLeft.fillRect(0, 0, widthLeft, heightLeft);
+    volumeterValueLeft.textContent = "-∞ dBFS";
+    volumeterValueLeft.style.color = "#2ecc71";
+
+    const widthRight = volumeterCanvasRight.width;
+    const heightRight = volumeterCanvasRight.height;
+    volumeterCtxRight.fillStyle = "#151a22";
+    volumeterCtxRight.fillRect(0, 0, widthRight, heightRight);
+    volumeterValueRight.textContent = "-∞ dBFS";
+    volumeterValueRight.style.color = "#2ecc71";
   }
 
   function applyVolume() {
@@ -494,16 +622,32 @@
         debugWarn("⚠️ No hay tracks activos en el stream!");
       }
 
-      // Crear AnalyserNode si no existe
-      if (!analyserNode) {
-        analyserNode = audioCtx.createAnalyser();
-        analyserNode.fftSize = 256;
-        analyserNode.smoothingTimeConstant = 0.8;
+      // Crear AnalyserNodes y ChannelSplitter si no existen
+      if (!analyserNodeLeft || !analyserNodeRight || !splitterNode) {
+        // Crear el splitter para separar canales L/R
+        splitterNode = audioCtx.createChannelSplitter(2);
+        debugLog("ChannelSplitter creado (2 canales)");
+
+        // Crear analyser para canal izquierdo
+        analyserNodeLeft = audioCtx.createAnalyser();
+        analyserNodeLeft.fftSize = 256;
+        analyserNodeLeft.smoothingTimeConstant = 0.8;
         debugLog(
-          "AnalyserNode creado - FFT:",
-          analyserNode.fftSize,
+          "AnalyserNode LEFT creado - FFT:",
+          analyserNodeLeft.fftSize,
           "Smoothing:",
-          analyserNode.smoothingTimeConstant
+          analyserNodeLeft.smoothingTimeConstant
+        );
+
+        // Crear analyser para canal derecho
+        analyserNodeRight = audioCtx.createAnalyser();
+        analyserNodeRight.fftSize = 256;
+        analyserNodeRight.smoothingTimeConstant = 0.8;
+        debugLog(
+          "AnalyserNode RIGHT creado - FFT:",
+          analyserNodeRight.fftSize,
+          "Smoothing:",
+          analyserNodeRight.smoothingTimeConstant
         );
       }
 
@@ -513,10 +657,13 @@
         sourceNode.disconnect();
       } catch (e) {}
 
-      sourceNode.connect(analyserNode);
-      // analyserNode NO se conecta a nada, solo se usa para leer datos
+      // Conectar: sourceNode → splitter → analysers (L/R)
+      sourceNode.connect(splitterNode);
+      splitterNode.connect(analyserNodeLeft, 0); // Canal izquierdo (0)
+      splitterNode.connect(analyserNodeRight, 1); // Canal derecho (1)
+      // Los analysers NO se conectan a nada, solo se usan para leer datos
 
-      debugLog("AnalyserNode conectado (solo para lectura, no para audio)");
+      debugLog("AnalyserNodes conectados (solo para lectura, no para audio)");
       isAudioSetup = true;
 
       // Iniciar visualización del volumeter
@@ -536,7 +683,7 @@
         },
         webAudio: {
           contextState: audioCtx.state,
-          analyserFFT: analyserNode.fftSize,
+          analyserFFT: analyserNodeLeft?.fftSize || 0,
           sourceConnected: !!sourceNode,
           volumeterRunning: !!volumeterAnimationId,
         },
@@ -567,6 +714,16 @@
   function setStatus(txt, cls = "muted") {
     stEl.className = `status ${cls}`;
     stEl.textContent = txt;
+  }
+
+  function updateConnectButton(isConnected) {
+    if (isConnected) {
+      btnConnect.textContent = "⏹ Desconectar";
+      btnConnect.className = "btn-danger";
+    } else {
+      btnConnect.textContent = "▶ Conectar";
+      btnConnect.className = "btn-primary";
+    }
   }
 
   async function ensureLabels() {
@@ -759,6 +916,7 @@
       }, 1500);
 
       setStatus("reproduciendo ✓", "ok");
+      updateConnectButton(true);
     };
 
     const offer = await pc.createOffer();
@@ -858,11 +1016,13 @@
     if (abortReconnect) return;
 
     setStatus(`reconectando en ${RECONNECT_MS / 1000}s…`, "muted");
+    updateConnectButton(false);
 
     setTimeout(() => {
       connectWHEP().catch((e) => {
         console.error("Reconnect error:", e);
         setStatus(`error: ${e.message} — reintento…`, "bad");
+        updateConnectButton(false);
         cleanupAndMaybeReconnect();
       });
     }, RECONNECT_MS);
@@ -888,6 +1048,7 @@
     stopVolumeter();
 
     setStatus("desconectado", "muted");
+    updateConnectButton(false);
   } // ---- Test tone (440 Hz) para verificar la tarjeta de salida ----
   function startTestTone() {
     if (testCtx) return; // ya sonando
@@ -1114,20 +1275,20 @@
     }
 
     // 7. Web Audio API
-    console.log("\n7️⃣ Web Audio API (AnalyserNode):");
+    console.log("\n7️⃣ Web Audio API (AnalyserNodes - Stereo):");
     if (audioCtx) {
       console.log("✅ AudioContext creado");
       console.log("   - State:", audioCtx.state);
       console.log("   - Sample rate:", audioCtx.sampleRate);
 
-      if (analyserNode) {
-        console.log("✅ AnalyserNode creado");
-        console.log("   - FFT size:", analyserNode.fftSize);
-        console.log("   - Smoothing:", analyserNode.smoothingTimeConstant);
+      if (analyserNodeLeft && analyserNodeRight) {
+        console.log("✅ AnalyserNodes creados (L/R)");
+        console.log("   - FFT size:", analyserNodeLeft.fftSize);
+        console.log("   - Smoothing:", analyserNodeLeft.smoothingTimeConstant);
 
-        // Leer datos actuales
-        const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
-        analyserNode.getByteTimeDomainData(dataArray);
+        // Leer datos actuales del canal izquierdo
+        const dataArray = new Uint8Array(analyserNodeLeft.frequencyBinCount);
+        analyserNodeLeft.getByteTimeDomainData(dataArray);
 
         // Verificar si hay variación (señal de audio)
         const min = Math.min(...dataArray);
@@ -1135,7 +1296,9 @@
         const hasVariation = max - min > 2;
 
         console.log(
-          `   - Datos actuales: min=${min}, max=${max}, variación=${max - min}`
+          `   - Datos actuales (L): min=${min}, max=${max}, variación=${
+            max - min
+          }`
         );
         console.log(
           `   - ${
@@ -1172,8 +1335,9 @@
   });
 
   btnConnect.addEventListener("click", async () => {
+    // Si ya está conectado, desconectar
     if (pc) {
-      setStatus("ya conectado", "ok");
+      disconnectWHEP();
       return;
     }
 
@@ -1188,11 +1352,8 @@
     } catch (e) {
       console.error("Connect error:", e);
       setStatus("error: " + e.message, "bad");
+      updateConnectButton(false);
     }
-  });
-
-  btnDisconnect.addEventListener("click", () => {
-    disconnectWHEP();
   });
 
   btnTest.addEventListener("click", async () => {
@@ -1464,6 +1625,19 @@
     }
   });
 
+  autoConnectToggle.addEventListener("change", async () => {
+    AUTO_CONNECT = autoConnectToggle.checked;
+    await window.webrtcCfg.set("AUTO_CONNECT", AUTO_CONNECT ? "true" : "false");
+
+    if (AUTO_CONNECT) {
+      console.log(
+        "🔌 Auto Conectar ACTIVADO - Se conectará automáticamente al iniciar"
+      );
+    } else {
+      console.log("🔌 Auto Conectar DESACTIVADO");
+    }
+  });
+
   // ============ ARRANQUE INICIAL ============
   setStatus("iniciando…", "muted");
 
@@ -1479,15 +1653,18 @@
 
     setStatus("listo para conectar", "muted");
 
-    // Auto-conectar si quieres (opcional, comenta si no lo deseas)
-    setTimeout(async () => {
-      try {
-        await connectWHEP();
-      } catch (e) {
-        console.error("Error en conexión inicial:", e);
-        setStatus("error inicial: " + e.message, "bad");
-      }
-    }, 500);
+    // Auto-conectar si está habilitado en configuración
+    if (AUTO_CONNECT) {
+      setTimeout(async () => {
+        try {
+          debugLog("🔌 Auto-conectando...");
+          await connectWHEP();
+        } catch (e) {
+          console.error("Error en conexión automática:", e);
+          setStatus("error al auto-conectar: " + e.message, "bad");
+        }
+      }, 500);
+    }
   } catch (e) {
     console.error("Error en arranque:", e);
     setStatus("error de arranque: " + e.message, "bad");

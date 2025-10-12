@@ -335,35 +335,37 @@
             filter: drop-shadow(0 2px 4px rgba(46, 160, 67, 0.3));
         }
 
-        /* Volumeter mejorado */
+        /* Volumeter mejorado - Estéreo */
         .volumeter-container {
             display: flex;
-            align-items: center;
-            gap: 12px;
+            flex-direction: column;
+            gap: 4px;
             flex: 1;
             padding: 8px 0;
         }
 
-        #volumeter {
+        #volumeterLeft,
+        #volumeterRight {
             border: 1px solid var(--border-primary);
-            border-radius: 8px;
+            border-radius: 6px;
             background: var(--bg-tertiary);
             flex: 1;
-            max-width: 400px;
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
         }
 
         .volumeter-value {
-            min-width: 80px;
-            text-align: right;
+            min-width: 100px;
+            width: 100px;
+            text-align: center;
             font-weight: 700;
-            font-size: 14px;
+            font-size: 13px;
             color: var(--accent-green);
             font-family: 'Courier New', monospace;
             padding: 4px 8px;
             background: var(--bg-tertiary);
             border-radius: 6px;
             border: 1px solid var(--border-primary);
+            flex-shrink: 0;
         }
 
         /* Estilos para el modal de información */
@@ -717,7 +719,6 @@
             <div class="card-title">⚡ Controles</div>
             <div class="row" style="gap: 12px;">
                 <button id="btnConnect" class="btn-primary">▶ Conectar</button>
-                <button id="btnDisconnect" class="btn-danger">⏹ Desconectar</button>
                 <button id="btnTest" class="btn-secondary">🔊 Probar Tono</button>
                 <button id="btnStreamInfo" class="btn-secondary">📊 Info Stream</button>
                 <button id="btnSettings" class="btn-secondary">⚙️ Configuración</button>
@@ -747,10 +748,20 @@
 
         <!-- Card de Volumeter -->
         <div class="card">
-            <div class="card-title">📊 Nivel de Audio en Tiempo Real</div>
+            <div class="card-title">📊 Nivel de Audio en Tiempo Real (Estéreo)</div>
             <div class="volumeter-container">
-                <canvas id="volumeter" width="400" height="50"></canvas>
-                <span class="volumeter-value" id="volumeterValue">-∞ dBFS</span>
+                <div style="margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <canvas id="volumeterLeft" width="500" height="20"></canvas>
+                        <span class="volumeter-value" id="volumeterValueLeft">-∞ dBFS</span>
+                    </div>
+                </div>
+                <div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <canvas id="volumeterRight" width="500" height="20"></canvas>
+                        <span class="volumeter-value" id="volumeterValueRight">-∞ dBFS</span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -890,6 +901,21 @@
                     </div>
                     <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); padding-left: 12px;">
                         💡 Activa esta opción para ver información detallada de WebRTC, audio y conexión
+                    </div>
+                </div>
+
+                <!-- Auto Connect -->
+                <div class="config-option">
+                    <div class="config-option-title">🔌 Auto Conectar</div>
+                    <div class="toggle-option">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="autoConnectToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="toggle-label">Conectar automáticamente al iniciar la aplicación</span>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); padding-left: 12px;">
+                        💡 La aplicación se conectará automáticamente a la URL WHEP guardada
                     </div>
                 </div>
             </div>
