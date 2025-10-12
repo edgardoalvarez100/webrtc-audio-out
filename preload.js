@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld("webrtcCfg", {
 // API para funcionalidades de Electron
 contextBridge.exposeInMainWorld("electronAPI", {
   setAutostart: (enabled) => ipcRenderer.invoke("set-autostart", enabled),
+  getAutostart: () => ipcRenderer.invoke("get-autostart"),
 });

@@ -45,6 +45,17 @@ ipcMain.handle("set-autostart", (event, enabled) => {
   }
 });
 
+// IPC handler para obtener el estado actual del autostart
+ipcMain.handle("get-autostart", () => {
+  try {
+    const settings = app.getLoginItemSettings();
+    return settings.openAtLogin;
+  } catch (e) {
+    console.error("Error al obtener autostart:", e);
+    return false;
+  }
+});
+
 // Crear la ventana principal
 function createWindow() {
   const win = new BrowserWindow({

@@ -180,12 +180,14 @@
   let peakLevelLeft = 0;
   let peakHoldTimeLeft = 0;
   let currentDbLeft = -Infinity;
+  let peakDbLeft = -Infinity;
 
   // Canal derecho
   let currentLevelRight = 0;
   let peakLevelRight = 0;
   let peakHoldTimeRight = 0;
   let currentDbRight = -Infinity;
+  let peakDbRight = -Infinity;
 
   function startVolumeter() {
     if (volumeterAnimationId || !analyserNodeLeft || !analyserNodeRight) {
@@ -202,11 +204,13 @@
     peakLevelLeft = 0;
     peakHoldTimeLeft = 0;
     currentDbLeft = -Infinity;
+    peakDbLeft = -Infinity;
 
     currentLevelRight = 0;
     peakLevelRight = 0;
     peakHoldTimeRight = 0;
     currentDbRight = -Infinity;
+    peakDbRight = -Infinity;
 
     debugLog("Volumeter estéreo iniciado - Buffer length:", bufferLength);
 
@@ -273,6 +277,17 @@
           instantDbLeft * dbSmoothingFactorLeft;
       }
 
+      // Mantener pico de dB
+      if (instantDbLeft > peakDbLeft || peakDbLeft === -Infinity) {
+        peakDbLeft = instantDbLeft;
+        peakHoldTimeLeft = 30;
+      } else if (peakHoldTimeLeft > 0) {
+        peakHoldTimeLeft--;
+      } else {
+        peakDbLeft = peakDbLeft - 0.5; // Decaimiento de 0.5 dB por frame
+        if (peakDbLeft < -60) peakDbLeft = -Infinity;
+      }
+
       // ========== CANAL DERECHO ==========
       let sumRight = 0;
       for (let i = 0; i < bufferLength; i++) {
@@ -319,6 +334,17 @@
           instantDbRight * dbSmoothingFactorRight;
       }
 
+      // Mantener pico de dB
+      if (instantDbRight > peakDbRight || peakDbRight === -Infinity) {
+        peakDbRight = instantDbRight;
+        peakHoldTimeRight = 30;
+      } else if (peakHoldTimeRight > 0) {
+        peakHoldTimeRight--;
+      } else {
+        peakDbRight = peakDbRight - 0.5; // Decaimiento de 0.5 dB por frame
+        if (peakDbRight < -60) peakDbRight = -Infinity;
+      }
+
       // Log ocasional para debugging
       if (DEBUG_MODE && Math.random() < 0.005) {
         debugLog(
@@ -335,7 +361,8 @@
         currentLevelLeft,
         peakLevelLeft,
         instantDbLeft,
-        currentDbLeft
+        currentDbLeft,
+        peakDbLeft
       );
       drawVolumeter(
         volumeterCtxRight,
@@ -343,7 +370,8 @@
         currentLevelRight,
         peakLevelRight,
         instantDbRight,
-        currentDbRight
+        currentDbRight,
+        peakDbRight
       );
     }
 
@@ -381,7 +409,8 @@
     level,
     peakLevel,
     instantDb,
-    displayDb
+    displayDb,
+    peakDb
   ) {
     const width = ctx.canvas.width;
     const height = ctx.canvas.height;
@@ -390,8 +419,16 @@
     ctx.fillStyle = "#151a22";
     ctx.fillRect(0, 0, width, height);
 
-    // Calcular ancho de la barra principal
-    const barWidth = width * level;
+    // Calcular ancho de la barra basándose en dBFS, no en level
+    // Rango: -60 dBFS (silencio) a 0 dBFS (máximo)
+    const dbToBarWidth = (db) => {
+      if (db <= -60 || db === -Infinity) return 0;
+      if (db >= 0) return width;
+      // Mapear -60dB a 0dB como 0% a 100%
+      return width * ((db + 60) / 60);
+    };
+
+    const barWidth = dbToBarWidth(displayDb);
 
     // Estándares profesionales de dBFS:
     // Verde: < -12 dBFS (operación segura)
@@ -400,7 +437,6 @@
     // Rojo: ≥ -3 dBFS (peligro de clipping)
 
     // Convertir dB a posiciones en el gradiente (0 dB = 100%, -60 dB ≈ 0%)
-    // Aproximación: 0 dB = level 1.0, -60 dB = level 0.0
     const dbToPosition = (dbValue) => {
       // Mapear -60dB a 0dB como 0.0 a 1.0
       return Math.max(0, Math.min(1, (dbValue + 60) / 60));
@@ -428,16 +464,16 @@
       ctx.fillRect(0, 0, Math.max(barWidth, 2), height);
     }
 
-    // Dibujar indicador de pico (línea vertical) usando los mismos estándares
-    const peakWidth = width * peakLevel;
-    if (peakWidth > 0 && peakLevel > level) {
-      // Determinar color del pico basado en dB instantáneo (no suavizado)
+    // Dibujar indicador de pico (línea vertical) basado en dBFS
+    const peakWidth = dbToBarWidth(peakDb);
+    if (peakWidth > 0 && peakDb > displayDb) {
+      // Determinar color del pico basado en peakDb
       let peakColor;
-      if (instantDb >= -3) {
+      if (peakDb >= -3) {
         peakColor = "#e74c3c"; // Rojo: ≥ -3 dBFS
-      } else if (instantDb >= -6) {
+      } else if (peakDb >= -6) {
         peakColor = "#f39c12"; // Naranja: -6 a -3 dBFS
-      } else if (instantDb >= -12) {
+      } else if (peakDb >= -12) {
         peakColor = "#f1c40f"; // Amarillo: -12 a -6 dBFS
       } else {
         peakColor = "#2ecc71"; // Verde: < -12 dBFS
@@ -1566,9 +1602,24 @@
       }
     });
 
-    // Cargar autostart
-    const autostart = await window.webrtcCfg.get("autostart", "false");
-    autostartToggle.checked = autostart === "true";
+    // Cargar autostart - Sincronizar con el estado real del sistema
+    try {
+      const systemAutostart = await window.electronAPI.getAutostart();
+      const savedAutostart = await window.webrtcCfg.get("autostart", "false");
+
+      // Si hay discrepancia, priorizar el estado guardado en config
+      if ((savedAutostart === "true") !== systemAutostart) {
+        console.log(
+          `Sincronizando autostart: config=${savedAutostart}, sistema=${systemAutostart}`
+        );
+        await window.electronAPI.setAutostart(savedAutostart === "true");
+      }
+
+      autostartToggle.checked = savedAutostart === "true";
+    } catch (e) {
+      console.error("Error al cargar autostart:", e);
+      autostartToggle.checked = false;
+    }
   }
 
   // Aplicar tamaño de fuente
