@@ -711,42 +711,55 @@
         /* Ecualizador */
         .eq-container {
             display: flex;
-            justify-content: space-around;
+            justify-content: space-evenly;
             align-items: flex-end;
-            gap: 8px;
-            padding: 20px;
+            gap: 0px;
+            padding: 12px 4px;
             background: var(--bg-tertiary);
             border-radius: 8px;
-            min-height: 200px;
+            min-height: 140px;
         }
 
         .eq-band {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 8px;
+            gap: 3px;
+            flex: 0 1 auto;
+            min-width: 0;
+            max-width: 60px;
+            padding: 0 6px;
+            border-right: 1px solid var(--border-primary);
+        }
+
+        .eq-band:last-child {
+            border-right: none;
         }
 
         .eq-band label {
-            font-size: 11px;
+            font-size: 9px;
             color: var(--text-secondary);
             writing-mode: horizontal-tb;
+            white-space: nowrap;
+            text-align: center;
+            font-weight: 600;
         }
 
         .eq-band input[type="range"] {
             -webkit-appearance: slider-vertical;
             writing-mode: bt-lr;
-            width: 6px;
-            height: 150px;
+            width: 3px;
+            height: 90px;
             padding: 0;
         }
 
         .eq-band .eq-value {
-            font-size: 11px;
+            font-size: 9px;
             color: var(--accent-green);
             font-family: 'Courier New', monospace;
-            min-width: 45px;
+            min-width: 30px;
             text-align: center;
+            font-weight: 700;
         }
 
         /* Grid de controles */
@@ -1021,7 +1034,7 @@
 
     <!-- Modal de Complementos de Audio -->
     <div class="modal" id="pluginsModal">
-        <div class="modal-content" style="max-width: 1000px; width: 95%;">
+        <div class="modal-content" style="max-width: 900px; width: 95%;">
             <div class="modal-header">
                 <h2>🎛️ Complementos de Audio</h2>
                 <button class="close-btn" id="closePluginsModal">✕</button>

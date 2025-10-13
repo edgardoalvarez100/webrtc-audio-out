@@ -750,6 +750,240 @@
     }
   }
 
+  // Función para guardar configuración de complementos
+  async function savePluginsConfig() {
+    try {
+      const config = {
+        // Estados de activación
+        eqEnabled: document.getElementById("eqToggle")?.checked || false,
+        compressorEnabled:
+          document.getElementById("compressorToggle")?.checked || false,
+        limiterEnabled:
+          document.getElementById("limiterToggle")?.checked || false,
+        reverbEnabled:
+          document.getElementById("reverbToggle")?.checked || false,
+
+        // EQ (10 bandas)
+        eq: {
+          band32: parseFloat(document.getElementById("eq32")?.value || 0),
+          band64: parseFloat(document.getElementById("eq64")?.value || 0),
+          band125: parseFloat(document.getElementById("eq125")?.value || 0),
+          band250: parseFloat(document.getElementById("eq250")?.value || 0),
+          band500: parseFloat(document.getElementById("eq500")?.value || 0),
+          band1k: parseFloat(document.getElementById("eq1k")?.value || 0),
+          band2k: parseFloat(document.getElementById("eq2k")?.value || 0),
+          band4k: parseFloat(document.getElementById("eq4k")?.value || 0),
+          band8k: parseFloat(document.getElementById("eq8k")?.value || 0),
+          band16k: parseFloat(document.getElementById("eq16k")?.value || 0),
+        },
+
+        // Compresor
+        compressor: {
+          threshold: parseFloat(
+            document.getElementById("compThreshold")?.value || -24
+          ),
+          knee: parseFloat(document.getElementById("compKnee")?.value || 30),
+          ratio: parseFloat(document.getElementById("compRatio")?.value || 12),
+          attack: parseFloat(
+            document.getElementById("compAttack")?.value || 0.003
+          ),
+          release: parseFloat(
+            document.getElementById("compRelease")?.value || 0.25
+          ),
+        },
+
+        // Limitador
+        limiter: {
+          ceiling: parseFloat(
+            document.getElementById("limiterCeiling")?.value || -0.1
+          ),
+        },
+
+        // Delay/Reverb
+        reverb: {
+          time: parseFloat(document.getElementById("delayTime")?.value || 0.5),
+          feedback: parseFloat(
+            document.getElementById("delayFeedback")?.value || 0.3
+          ),
+          mix: parseFloat(document.getElementById("reverbMix")?.value || 0),
+        },
+      };
+
+      await window.webrtcCfg.set("pluginsConfig", JSON.stringify(config));
+      debugLog("✅ Configuración de complementos guardada");
+    } catch (e) {
+      debugError("Error guardando configuración de complementos:", e);
+    }
+  }
+
+  // Función para cargar configuración de complementos
+  async function loadPluginsConfig() {
+    try {
+      const configStr = await window.webrtcCfg.get("pluginsConfig", null);
+      if (!configStr) {
+        debugLog("No hay configuración de complementos guardada");
+        return;
+      }
+
+      const config = JSON.parse(configStr);
+      debugLog("📂 Cargando configuración de complementos...");
+
+      // Cargar estados de activación
+      if (document.getElementById("eqToggle")) {
+        document.getElementById("eqToggle").checked = config.eqEnabled || false;
+      }
+      if (document.getElementById("compressorToggle")) {
+        document.getElementById("compressorToggle").checked =
+          config.compressorEnabled || false;
+      }
+      if (document.getElementById("limiterToggle")) {
+        document.getElementById("limiterToggle").checked =
+          config.limiterEnabled || false;
+      }
+      if (document.getElementById("reverbToggle")) {
+        document.getElementById("reverbToggle").checked =
+          config.reverbEnabled || false;
+      }
+
+      // Cargar EQ
+      if (config.eq) {
+        const eqIds = [
+          "eq32",
+          "eq64",
+          "eq125",
+          "eq250",
+          "eq500",
+          "eq1k",
+          "eq2k",
+          "eq4k",
+          "eq8k",
+          "eq16k",
+        ];
+        const eqKeys = [
+          "band32",
+          "band64",
+          "band125",
+          "band250",
+          "band500",
+          "band1k",
+          "band2k",
+          "band4k",
+          "band8k",
+          "band16k",
+        ];
+
+        eqIds.forEach((id, index) => {
+          const slider = document.getElementById(id);
+          const value = config.eq[eqKeys[index]] || 0;
+          if (slider) {
+            slider.value = value;
+            const valueSpan = slider.nextElementSibling;
+            if (valueSpan) {
+              valueSpan.textContent = `${value >= 0 ? "+" : ""}${value.toFixed(
+                1
+              )} dB`;
+            }
+            if (eqNodes[index]) {
+              eqNodes[index].gain.value = value;
+            }
+          }
+        });
+      }
+
+      // Cargar Compresor
+      if (config.compressor) {
+        if (document.getElementById("compThreshold")) {
+          document.getElementById("compThreshold").value =
+            config.compressor.threshold;
+          document.getElementById(
+            "compThresholdValue"
+          ).textContent = `${config.compressor.threshold} dB`;
+          if (compressorNode)
+            compressorNode.threshold.value = config.compressor.threshold;
+        }
+        if (document.getElementById("compKnee")) {
+          document.getElementById("compKnee").value = config.compressor.knee;
+          document.getElementById(
+            "compKneeValue"
+          ).textContent = `${config.compressor.knee} dB`;
+          if (compressorNode)
+            compressorNode.knee.value = config.compressor.knee;
+        }
+        if (document.getElementById("compRatio")) {
+          document.getElementById("compRatio").value = config.compressor.ratio;
+          document.getElementById(
+            "compRatioValue"
+          ).textContent = `${config.compressor.ratio}:1`;
+          if (compressorNode)
+            compressorNode.ratio.value = config.compressor.ratio;
+        }
+        if (document.getElementById("compAttack")) {
+          document.getElementById("compAttack").value =
+            config.compressor.attack;
+          document.getElementById("compAttackValue").textContent = `${(
+            config.compressor.attack * 1000
+          ).toFixed(0)} ms`;
+          if (compressorNode)
+            compressorNode.attack.value = config.compressor.attack;
+        }
+        if (document.getElementById("compRelease")) {
+          document.getElementById("compRelease").value =
+            config.compressor.release;
+          document.getElementById("compReleaseValue").textContent = `${(
+            config.compressor.release * 1000
+          ).toFixed(0)} ms`;
+          if (compressorNode)
+            compressorNode.release.value = config.compressor.release;
+        }
+      }
+
+      // Cargar Limitador
+      if (config.limiter && document.getElementById("limiterCeiling")) {
+        document.getElementById("limiterCeiling").value =
+          config.limiter.ceiling;
+        document.getElementById(
+          "limiterCeilingValue"
+        ).textContent = `${config.limiter.ceiling.toFixed(1)} dB`;
+        if (limiterNode) limiterNode.threshold.value = config.limiter.ceiling;
+      }
+
+      // Cargar Delay/Reverb
+      if (config.reverb) {
+        if (document.getElementById("delayTime")) {
+          document.getElementById("delayTime").value = config.reverb.time;
+          document.getElementById("delayTimeValue").textContent = `${(
+            config.reverb.time * 1000
+          ).toFixed(0)} ms`;
+          if (delayNode) delayNode.delayTime.value = config.reverb.time;
+        }
+        if (document.getElementById("delayFeedback")) {
+          document.getElementById("delayFeedback").value =
+            config.reverb.feedback;
+          document.getElementById("delayFeedbackValue").textContent = `${(
+            config.reverb.feedback * 100
+          ).toFixed(0)}%`;
+          if (delayFeedback) delayFeedback.gain.value = config.reverb.feedback;
+        }
+        if (document.getElementById("reverbMix")) {
+          document.getElementById("reverbMix").value = config.reverb.mix;
+          document.getElementById(
+            "reverbMixValue"
+          ).textContent = `${config.reverb.mix.toFixed(0)}%`;
+          const mixValue = config.reverb.mix / 100;
+          if (delayWetGain) delayWetGain.gain.value = mixValue;
+          if (delayDryGain) delayDryGain.gain.value = 1 - mixValue;
+        }
+      }
+
+      // Reconectar el grafo de audio con la configuración cargada
+      reconnectAudioGraph();
+
+      debugLog("✅ Configuración de complementos cargada");
+    } catch (e) {
+      debugError("Error cargando configuración de complementos:", e);
+    }
+  }
+
   async function setupAudioProcessing(stream) {
     try {
       debugLog("=== setupAudioProcessing iniciado ===");
@@ -811,6 +1045,9 @@
 
         // Inicializar complementos de audio
         initAudioPlugins();
+
+        // Cargar configuración guardada de los complementos
+        await loadPluginsConfig();
       }
 
       // IMPORTANTE: Desconectar y recrear nodos cada vez que hay un nuevo stream
@@ -1912,6 +2149,7 @@
   // Ecualizador
   document.getElementById("eqToggle").addEventListener("change", () => {
     reconnectAudioGraph();
+    savePluginsConfig();
   });
 
   const eqIds = [
@@ -1936,6 +2174,7 @@
       if (eqNodes[index]) {
         eqNodes[index].gain.value = value;
       }
+      savePluginsConfig();
     });
   });
 
@@ -1948,29 +2187,34 @@
         eqNodes[index].gain.value = 0;
       }
     });
+    savePluginsConfig();
   });
 
   // Compresor
   document.getElementById("compressorToggle").addEventListener("change", () => {
     reconnectAudioGraph();
+    savePluginsConfig();
   });
 
   document.getElementById("compThreshold").addEventListener("input", (e) => {
     const value = parseFloat(e.target.value);
     document.getElementById("compThresholdValue").textContent = `${value} dB`;
     if (compressorNode) compressorNode.threshold.value = value;
+    savePluginsConfig();
   });
 
   document.getElementById("compKnee").addEventListener("input", (e) => {
     const value = parseFloat(e.target.value);
     document.getElementById("compKneeValue").textContent = `${value} dB`;
     if (compressorNode) compressorNode.knee.value = value;
+    savePluginsConfig();
   });
 
   document.getElementById("compRatio").addEventListener("input", (e) => {
     const value = parseFloat(e.target.value);
     document.getElementById("compRatioValue").textContent = `${value}:1`;
     if (compressorNode) compressorNode.ratio.value = value;
+    savePluginsConfig();
   });
 
   document.getElementById("compAttack").addEventListener("input", (e) => {
@@ -1979,6 +2223,7 @@
       value * 1000
     ).toFixed(0)} ms`;
     if (compressorNode) compressorNode.attack.value = value;
+    savePluginsConfig();
   });
 
   document.getElementById("compRelease").addEventListener("input", (e) => {
@@ -1987,11 +2232,13 @@
       value * 1000
     ).toFixed(0)} ms`;
     if (compressorNode) compressorNode.release.value = value;
+    savePluginsConfig();
   });
 
   // Limitador
   document.getElementById("limiterToggle").addEventListener("change", () => {
     reconnectAudioGraph();
+    savePluginsConfig();
   });
 
   document.getElementById("limiterCeiling").addEventListener("input", (e) => {
@@ -2000,11 +2247,13 @@
       "limiterCeilingValue"
     ).textContent = `${value.toFixed(1)} dB`;
     if (limiterNode) limiterNode.threshold.value = value;
+    savePluginsConfig();
   });
 
   // Reverb/Delay
   document.getElementById("reverbToggle").addEventListener("change", () => {
     reconnectAudioGraph();
+    savePluginsConfig();
   });
 
   document.getElementById("delayTime").addEventListener("input", (e) => {
@@ -2013,6 +2262,7 @@
       value * 1000
     ).toFixed(0)} ms`;
     if (delayNode) delayNode.delayTime.value = value;
+    savePluginsConfig();
   });
 
   document.getElementById("delayFeedback").addEventListener("input", (e) => {
@@ -2021,6 +2271,7 @@
       value * 100
     ).toFixed(0)}%`;
     if (delayFeedback) delayFeedback.gain.value = value;
+    savePluginsConfig();
   });
 
   document.getElementById("reverbMix").addEventListener("input", (e) => {
@@ -2030,6 +2281,7 @@
     ).toFixed(0)}%`;
     if (delayWetGain) delayWetGain.gain.value = value;
     if (delayDryGain) delayDryGain.gain.value = 1 - value;
+    savePluginsConfig();
   });
 
   // Cargar configuración guardada
