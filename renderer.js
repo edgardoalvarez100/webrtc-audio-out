@@ -26,6 +26,9 @@
   const btnSettings = document.getElementById("btnSettings");
   const settingsModal = document.getElementById("settingsModal");
   const closeSettingsModal = document.getElementById("closeSettingsModal");
+  const btnPlugins = document.getElementById("btnPlugins");
+  const pluginsModal = document.getElementById("pluginsModal");
+  const closePluginsModal = document.getElementById("closePluginsModal");
   const autostartToggle = document.getElementById("autostartToggle");
   const debugToggle = document.getElementById("debugToggle");
   const autoConnectToggle = document.getElementById("autoConnectToggle");
@@ -59,6 +62,15 @@
   let analyserNodeRight = null;
   let splitterNode = null;
   let volumeterAnimationId = null;
+
+  // Para complementos de audio
+  let eqNodes = []; // Array de 10 filtros para ecualizador
+  let compressorNode = null;
+  let limiterNode = null;
+  let delayNode = null;
+  let delayFeedback = null;
+  let delayWetGain = null;
+  let delayDryGain = null;
 
   // Para "Probar tono"
   let testCtx = null,
@@ -546,7 +558,199 @@
     }
   }
 
-  function setupAudioProcessing(stream) {
+  // ========== COMPLEMENTOS DE AUDIO ==========
+
+  function initAudioPlugins() {
+    if (!audioCtx) {
+      debugWarn("AudioContext no disponible para init plugins");
+      return;
+    }
+
+    // Inicializar Ecualizador (10 bandas)
+    const eqFrequencies = [
+      32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000,
+    ];
+    eqNodes = eqFrequencies.map((freq) => {
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = "peaking";
+      filter.frequency.value = freq;
+      filter.Q.value = 1.0;
+      filter.gain.value = 0;
+      return filter;
+    });
+
+    // Inicializar Compresor
+    compressorNode = audioCtx.createDynamicsCompressor();
+    compressorNode.threshold.value = -24;
+    compressorNode.knee.value = 30;
+    compressorNode.ratio.value = 12;
+    compressorNode.attack.value = 0.003;
+    compressorNode.release.value = 0.25;
+
+    // Inicializar Limitador (otro compresor con parámetros extremos)
+    limiterNode = audioCtx.createDynamicsCompressor();
+    limiterNode.threshold.value = -0.1;
+    limiterNode.knee.value = 0;
+    limiterNode.ratio.value = 20;
+    limiterNode.attack.value = 0.001;
+    limiterNode.release.value = 0.01;
+
+    // Inicializar Delay/Reverb
+    delayNode = audioCtx.createDelay(2.0);
+    delayNode.delayTime.value = 0.5;
+
+    delayFeedback = audioCtx.createGain();
+    delayFeedback.gain.value = 0.3;
+
+    delayWetGain = audioCtx.createGain();
+    delayWetGain.gain.value = 0;
+
+    delayDryGain = audioCtx.createGain();
+    delayDryGain.gain.value = 1;
+
+    // Conectar delay feedback loop
+    delayNode.connect(delayFeedback);
+    delayFeedback.connect(delayNode);
+    delayNode.connect(delayWetGain);
+
+    debugLog("✅ Complementos de audio inicializados");
+  }
+
+  function reconnectAudioGraph() {
+    if (!sourceNode || !gainNode || !destinationNode) {
+      debugWarn("Nodos de audio no disponibles para reconectar");
+      return;
+    }
+
+    try {
+      // Desconectar todo primero (evitar loops o conexiones dobles)
+      try {
+        sourceNode.disconnect();
+      } catch (e) {}
+      try {
+        gainNode.disconnect();
+      } catch (e) {}
+      if (limiterNode)
+        try {
+          limiterNode.disconnect();
+        } catch (e) {}
+      if (compressorNode)
+        try {
+          compressorNode.disconnect();
+        } catch (e) {}
+      eqNodes.forEach((node) => {
+        try {
+          node.disconnect();
+        } catch (e) {}
+      });
+      if (delayNode)
+        try {
+          delayNode.disconnect();
+        } catch (e) {}
+      if (delayDryGain)
+        try {
+          delayDryGain.disconnect();
+        } catch (e) {}
+      if (delayWetGain)
+        try {
+          delayWetGain.disconnect();
+        } catch (e) {}
+
+      let currentNode = sourceNode;
+      debugLog("🔗 Iniciando reconexión desde sourceNode");
+
+      // Conectar EQ si está habilitado
+      const eqToggleEl = document.getElementById("eqToggle");
+      const eqEnabled = eqToggleEl ? eqToggleEl.checked : false;
+      if (eqEnabled && eqNodes.length > 0) {
+        currentNode.connect(eqNodes[0]);
+        for (let i = 0; i < eqNodes.length - 1; i++) {
+          eqNodes[i].connect(eqNodes[i + 1]);
+        }
+        currentNode = eqNodes[eqNodes.length - 1];
+        debugLog("✅ EQ conectado (10 bandas)");
+      }
+
+      // Conectar Compresor si está habilitado
+      const compToggleEl = document.getElementById("compressorToggle");
+      const compEnabled = compToggleEl ? compToggleEl.checked : false;
+      if (compEnabled && compressorNode) {
+        currentNode.connect(compressorNode);
+        currentNode = compressorNode;
+        debugLog("✅ Compresor conectado");
+      }
+
+      // Conectar Delay/Reverb si está habilitado
+      const reverbToggleEl = document.getElementById("reverbToggle");
+      const reverbEnabled = reverbToggleEl ? reverbToggleEl.checked : false;
+      if (reverbEnabled && delayNode && delayDryGain && delayWetGain) {
+        // Dry path: currentNode → delayDryGain → gainNode
+        currentNode.connect(delayDryGain);
+        delayDryGain.connect(gainNode);
+
+        // Wet path: currentNode → delayNode → delayWetGain → gainNode
+        currentNode.connect(delayNode);
+        delayNode.connect(delayWetGain);
+        delayWetGain.connect(gainNode);
+
+        debugLog("✅ Delay/Reverb conectado (wet+dry mix)");
+      } else {
+        // Sin delay: currentNode → gainNode directamente
+        currentNode.connect(gainNode);
+        debugLog("🔗 Ruta directa a gainNode (sin delay)");
+      }
+
+      // Conectar Limitador si está habilitado
+      const limiterToggleEl = document.getElementById("limiterToggle");
+      const limiterEnabled = limiterToggleEl ? limiterToggleEl.checked : false;
+
+      let finalNode = gainNode;
+
+      if (limiterEnabled && limiterNode) {
+        gainNode.connect(limiterNode);
+        finalNode = limiterNode;
+        debugLog("✅ Limitador conectado");
+      }
+
+      // Conectar a audioCtx.destination (salida directa del sistema)
+      finalNode.connect(audioCtx.destination);
+      debugLog(
+        "🔗 Conectado a audioCtx.destination (salida directa con complementos)"
+      );
+
+      // Reconectar volumeter (tap desde gainNode)
+      if (splitterNode && analyserNodeLeft && analyserNodeRight) {
+        try {
+          // Desconectar splitter primero para evitar errores
+          try {
+            splitterNode.disconnect();
+          } catch (e) {}
+
+          // Reconectar: gainNode → splitter → analysers
+          gainNode.connect(splitterNode);
+          splitterNode.connect(analyserNodeLeft, 0);
+          splitterNode.connect(analyserNodeRight, 1);
+          debugLog("🔗 Volumeter reconectado (tap desde gainNode)");
+        } catch (e) {
+          debugError("Error reconectando volumeter:", e);
+        }
+      }
+
+      debugLog("✅ Cadena de audio reconectada completamente");
+    } catch (e) {
+      debugError("❌ Error al reconectar cadena de audio:", e);
+      // Fallback: conectar directo
+      try {
+        sourceNode.connect(gainNode);
+        gainNode.connect(destinationNode);
+        debugLog("⚠️ Fallback: sourceNode → gainNode → destinationNode");
+      } catch (e2) {
+        debugError("❌ Error crítico en fallback:", e2);
+      }
+    }
+  }
+
+  async function setupAudioProcessing(stream) {
     try {
       debugLog("=== setupAudioProcessing iniciado ===");
       debugLog("Stream recibido:", stream);
@@ -573,66 +777,43 @@
         track.onended = () => debugError(`❌ Track ${idx} ENDED`);
       });
 
-      // PRIMERO: Establecer el stream directamente en el elemento de audio
-      audioEl.srcObject = stream;
-      audioEl.volume = Math.min(VOLUME / 100, 1.0);
-      audioEl.muted = false;
-
-      debugLog("audioEl configurado:", {
-        srcObject: !!audioEl.srcObject,
-        volume: audioEl.volume,
-        muted: audioEl.muted,
-        paused: audioEl.paused,
-        readyState: audioEl.readyState,
-      });
-
-      // Reproducir DESPUÉS de un pequeño delay para evitar interferencias
-      setTimeout(() => {
-        const playPromise = audioEl.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              debugLog("✅ Audio reproduciendo correctamente");
-              debugLog("audioEl después de play:", {
-                paused: audioEl.paused,
-                currentTime: audioEl.currentTime,
-                duration: audioEl.duration,
-              });
-            })
-            .catch((e) => {
-              debugError("❌ Error al reproducir audio:", e);
-              debugLog("Intentando reproducir sin audio (muted) primero...");
-              // Workaround: iniciar muted y luego unmute
-              audioEl.muted = true;
-              audioEl
-                .play()
-                .then(() => {
-                  debugLog("Audio iniciado en modo muted");
-                  // Esperar un poco y luego unmute
-                  setTimeout(() => {
-                    audioEl.muted = false;
-                    debugLog("Audio unmuted - debería sonar ahora");
-                  }, 100);
-                })
-                .catch((err) => {
-                  console.error(
-                    "No se pudo iniciar el audio incluso muted:",
-                    err
-                  );
-                });
-            });
-        }
-      }, 100); // Pequeño delay para estabilizar
-
-      // SEGUNDO: Configurar Web Audio API solo para el volumeter (análisis)
-      // Crear AudioContext si no existe
+      // PRIMERO: Configurar Web Audio API para procesamiento y análisis
+      // Crear AudioContext si no existe, con soporte para sinkId
       if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        debugLog("AudioContext creado, state:", audioCtx.state);
+        const currentDeviceId = outSel.value || "default";
+
+        // Intentar crear AudioContext con sinkId (característica moderna)
+        try {
+          const AudioContextClass =
+            window.AudioContext || window.webkitAudioContext;
+
+          // Verificar si AudioContext soporta sinkId
+          if (
+            AudioContextClass.prototype.hasOwnProperty("setSinkId") ||
+            AudioContextClass.prototype.setSinkId
+          ) {
+            debugLog("✅ AudioContext soporta setSinkId!");
+            audioCtx = new AudioContextClass({ sinkId: currentDeviceId });
+            debugLog(`AudioContext creado con sinkId: ${currentDeviceId}`);
+          } else {
+            debugLog(
+              "⚠️ AudioContext NO soporta setSinkId, usando constructor normal"
+            );
+            audioCtx = new AudioContextClass();
+          }
+
+          debugLog("AudioContext state:", audioCtx.state);
+        } catch (e) {
+          debugError("Error al crear AudioContext con sinkId:", e);
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          debugLog("AudioContext creado sin sinkId (fallback)");
+        }
+
+        // Inicializar complementos de audio
+        initAudioPlugins();
       }
 
-      // IMPORTANTE: Desconectar y recrear el source cada vez que hay un nuevo stream
-      // porque MediaStreamSource solo funciona con el stream original
+      // IMPORTANTE: Desconectar y recrear nodos cada vez que hay un nuevo stream
       if (sourceNode) {
         try {
           sourceNode.disconnect();
@@ -640,11 +821,34 @@
         } catch (e) {}
       }
 
-      // Crear MediaStreamSource desde el stream WebRTC directamente (SOLO para análisis)
+      if (gainNode) {
+        try {
+          gainNode.disconnect();
+        } catch (e) {}
+      }
+
+      if (destinationNode) {
+        try {
+          destinationNode.disconnect();
+        } catch (e) {}
+      }
+
+      // Crear MediaStreamSource desde el stream WebRTC
       sourceNode = audioCtx.createMediaStreamSource(stream);
-      debugLog(
-        "MediaStreamSource creado desde stream WebRTC (solo para volumeter)"
-      );
+      debugLog("MediaStreamSource creado desde stream WebRTC");
+
+      // Crear GainNode si no existe
+      if (!gainNode) {
+        gainNode = audioCtx.createGain();
+        gainNode.gain.value = VOLUME / 100;
+        debugLog("GainNode creado");
+      }
+
+      // Crear MediaStreamDestination para poder usar setSinkId
+      if (!destinationNode) {
+        destinationNode = audioCtx.createMediaStreamDestination();
+        debugLog("MediaStreamDestination creado");
+      }
 
       // Verificar que el stream tenga tracks activos
       const activeTracks = stream
@@ -687,20 +891,99 @@
         );
       }
 
-      // Conectar SOLO para análisis (volumeter)
-      // NO conectamos a destination porque el audio ya sale por audioEl
+      // Asegurar que el AudioContext esté en estado running ANTES de conectar
+      if (audioCtx.state === "suspended") {
+        debugLog("⚠️ AudioContext suspendido, resumiendo...");
+        await audioCtx.resume();
+        debugLog("✅ AudioContext resumed, state:", audioCtx.state);
+      }
+
+      // CONECTAR LA CADENA DE AUDIO CON COMPLEMENTOS
+      // Esto conectará: sourceNode → [EQ] → [Compressor] → [Delay] → gainNode → [Limiter] → destinationNode
+      reconnectAudioGraph();
+
+      // TAP del gainNode para volumeter (sin interrumpir la cadena principal)
       try {
-        sourceNode.disconnect();
-      } catch (e) {}
+        gainNode.connect(splitterNode);
+        splitterNode.connect(analyserNodeLeft, 0); // Canal izquierdo (0)
+        splitterNode.connect(analyserNodeRight, 1); // Canal derecho (1)
+        // Los analysers NO se conectan a nada más, solo se usan para leer datos
+        debugLog("Volumeter conectado (tap desde gainNode)");
+      } catch (e) {
+        debugError("Error conectando volumeter:", e);
+      }
 
-      // Conectar: sourceNode → splitter → analysers (L/R)
-      sourceNode.connect(splitterNode);
-      splitterNode.connect(analyserNodeLeft, 0); // Canal izquierdo (0)
-      splitterNode.connect(analyserNodeRight, 1); // Canal derecho (1)
-      // Los analysers NO se conectan a nada, solo se usan para leer datos
-
-      debugLog("AnalyserNodes conectados (solo para lectura, no para audio)");
+      debugLog("Cadena de audio completa conectada con complementos");
       isAudioSetup = true;
+
+      // CONFIGURAR audioEl para reproducir el stream procesado
+      // El audio pasará por: stream → sourceNode → [complementos] → gainNode → [limiter] → destinationNode
+      // Y luego: destinationNode.stream → audioEl → setSinkId → speaker seleccionado
+
+      debugLog("📊 Estado del destinationNode:", {
+        exists: !!destinationNode,
+        streamExists: !!destinationNode?.stream,
+        streamActive: destinationNode?.stream?.active,
+        audioTracks: destinationNode?.stream?.getAudioTracks()?.length || 0,
+      });
+
+      if (destinationNode && destinationNode.stream) {
+        const destTracks = destinationNode.stream.getAudioTracks();
+        debugLog("🎵 Tracks en destinationNode.stream:", destTracks.length);
+        destTracks.forEach((track, idx) => {
+          debugLog(`  Track ${idx}:`, {
+            id: track.id,
+            enabled: track.enabled,
+            muted: track.muted,
+            readyState: track.readyState,
+            label: track.label,
+          });
+        });
+      }
+
+      // NOTA: destinationNode.stream no funciona bien en Electron
+      // SOLUCIÓN: NO usar audioEl, usar SOLO audioCtx.destination
+      // Desventaja: No se puede usar setSinkId (selector de dispositivo)
+      debugLog("🔊 Usando SOLO audioCtx.destination (sin audioEl)");
+      debugLog(
+        "⚠️  Nota: El selector de dispositivo NO funcionará en este modo"
+      );
+      debugLog(
+        "⚠️  El audio saldrá por el dispositivo por defecto del sistema"
+      );
+
+      // Mantener audioEl con el stream original pero SILENCIADO
+      // (solo para que el stream se mantenga vivo)
+      audioEl.srcObject = stream;
+      audioEl.volume = 0;
+      audioEl.muted = true;
+
+      debugLog("audioEl configurado:", {
+        srcObject: !!audioEl.srcObject,
+        volume: audioEl.volume,
+        muted: audioEl.muted,
+        paused: audioEl.paused,
+        readyState: audioEl.readyState,
+      });
+
+      // Reproducir el audioEl (aunque está silenciado, mantiene el stream vivo)
+      try {
+        await audioEl.play();
+        debugLog("✅ audioEl iniciado (silenciado, mantiene stream vivo)");
+      } catch (e) {
+        debugError("❌ Error al iniciar audioEl:", e);
+      }
+
+      debugLog("✅ CONFIGURACIÓN FINAL:");
+      debugLog(
+        "   - Stream: WebRTC → Web Audio API (complementos) → audioCtx.destination"
+      );
+      debugLog("   - AudioContext.sinkId:", audioCtx.sinkId || "default");
+      debugLog("   - Complementos: ACTIVOS y funcionales ✅");
+      debugLog(
+        "   - Selector de dispositivo:",
+        audioCtx.setSinkId ? "ACTIVO ✅" : "NO SOPORTADO ⚠️"
+      );
 
       // Iniciar visualización del volumeter
       startVolumeter();
@@ -812,29 +1095,50 @@
   }
 
   async function applySink(deviceId) {
-    if (!audioEl.setSinkId) {
-      setStatus("setSinkId no soportado; usando salida por defecto", "bad");
-      devEl.textContent = "default";
-      return false;
+    const label =
+      outSel.selectedOptions[0]?.textContent ||
+      (deviceId === "default" ? "Default (Sistema)" : "device");
+
+    // Intentar cambiar el sinkId del AudioContext (modo complementos activos)
+    if (audioCtx && audioCtx.setSinkId) {
+      try {
+        await audioCtx.setSinkId(deviceId);
+        debugLog(`✅ AudioContext.setSinkId aplicado: ${deviceId}`);
+
+        // Guardar en configuración
+        await window.webrtcCfg.set("DEVICE_ID", deviceId);
+        await window.webrtcCfg.set("DEVICE_LABEL", label);
+
+        devEl.textContent = label;
+        return true;
+      } catch (e) {
+        debugError("❌ Error al aplicar AudioContext.setSinkId:", e);
+        // Intentar fallback con audioEl
+      }
     }
 
-    try {
-      await audioEl.setSinkId(deviceId);
-      const label =
-        outSel.selectedOptions[0]?.textContent ||
-        (deviceId === "default" ? "Default (Sistema)" : "device");
+    // Fallback: intentar con audioEl.setSinkId (modo sin complementos)
+    if (audioEl.setSinkId) {
+      try {
+        await audioEl.setSinkId(deviceId);
+        debugLog(`✅ audioEl.setSinkId aplicado: ${deviceId}`);
 
-      // Guardar en configuración persistente
-      await window.webrtcCfg.set("DEVICE_ID", deviceId);
-      await window.webrtcCfg.set("DEVICE_LABEL", label);
+        // Guardar en configuración
+        await window.webrtcCfg.set("DEVICE_ID", deviceId);
+        await window.webrtcCfg.set("DEVICE_LABEL", label);
 
-      devEl.textContent = label;
-      return true;
-    } catch (e) {
-      console.error("Error al cambiar salida de audio:", e);
-      setStatus("Error al cambiar salida de audio", "bad");
-      return false;
+        devEl.textContent = label;
+        return true;
+      } catch (e) {
+        debugError("❌ Error al aplicar audioEl.setSinkId:", e);
+      }
     }
+
+    // Si nada funciona
+    debugWarn("⚠️ setSinkId no soportado en ningún modo");
+    setStatus("setSinkId no soportado; usando salida por defecto", "bad");
+    devEl.textContent = "default";
+    return false;
   }
 
   async function refreshOutputs() {
@@ -876,7 +1180,7 @@
 
     pc.addTransceiver("audio", { direction: "recvonly" });
 
-    pc.ontrack = (ev) => {
+    pc.ontrack = async (ev) => {
       const [stream] = ev.streams;
       debugLog("🎵 ontrack event recibido!");
       debugLog("Event streams:", ev.streams);
@@ -914,13 +1218,12 @@
       });
 
       // Aplicar procesamiento de audio con control de volumen
-      setupAudioProcessing(stream);
+      await setupAudioProcessing(stream);
 
       // Iniciar monitor de bytes recibidos
       startBytesMonitor();
 
-      // NO aplicar dispositivo de salida inmediatamente para evitar conflictos
-      // Se aplicará después de que el audio esté estable
+      // Aplicar dispositivo de salida después de que el audio esté estable
       setTimeout(() => {
         const currentDeviceId = outSel.value || "default";
         debugLog("Aplicando dispositivo de salida (delayed):", currentDeviceId);
@@ -931,7 +1234,7 @@
           .catch((err) => {
             debugError("Error al aplicar dispositivo:", err);
           });
-      }, 1000); // Esperar 1 segundo para que el stream se estabilice
+      }, 1000);
 
       // Verificar estado del audio después de un momento
       setTimeout(() => {
@@ -1585,6 +1888,148 @@
     if (e.target === settingsModal) {
       settingsModal.classList.remove("show");
     }
+  });
+
+  // Abrir modal de complementos
+  btnPlugins.addEventListener("click", () => {
+    pluginsModal.classList.add("show");
+  });
+
+  // Cerrar modal de complementos
+  closePluginsModal.addEventListener("click", () => {
+    pluginsModal.classList.remove("show");
+  });
+
+  // Cerrar modal al hacer clic fuera
+  pluginsModal.addEventListener("click", (e) => {
+    if (e.target === pluginsModal) {
+      pluginsModal.classList.remove("show");
+    }
+  });
+
+  // ========== EVENT LISTENERS PARA COMPLEMENTOS ==========
+
+  // Ecualizador
+  document.getElementById("eqToggle").addEventListener("change", () => {
+    reconnectAudioGraph();
+  });
+
+  const eqIds = [
+    "eq32",
+    "eq64",
+    "eq125",
+    "eq250",
+    "eq500",
+    "eq1k",
+    "eq2k",
+    "eq4k",
+    "eq8k",
+    "eq16k",
+  ];
+  eqIds.forEach((id, index) => {
+    const slider = document.getElementById(id);
+    const valueSpan = slider.nextElementSibling;
+
+    slider.addEventListener("input", () => {
+      const value = parseFloat(slider.value);
+      valueSpan.textContent = `${value >= 0 ? "+" : ""}${value.toFixed(1)} dB`;
+      if (eqNodes[index]) {
+        eqNodes[index].gain.value = value;
+      }
+    });
+  });
+
+  document.getElementById("eqReset").addEventListener("click", () => {
+    eqIds.forEach((id, index) => {
+      const slider = document.getElementById(id);
+      slider.value = 0;
+      slider.nextElementSibling.textContent = "0 dB";
+      if (eqNodes[index]) {
+        eqNodes[index].gain.value = 0;
+      }
+    });
+  });
+
+  // Compresor
+  document.getElementById("compressorToggle").addEventListener("change", () => {
+    reconnectAudioGraph();
+  });
+
+  document.getElementById("compThreshold").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("compThresholdValue").textContent = `${value} dB`;
+    if (compressorNode) compressorNode.threshold.value = value;
+  });
+
+  document.getElementById("compKnee").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("compKneeValue").textContent = `${value} dB`;
+    if (compressorNode) compressorNode.knee.value = value;
+  });
+
+  document.getElementById("compRatio").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("compRatioValue").textContent = `${value}:1`;
+    if (compressorNode) compressorNode.ratio.value = value;
+  });
+
+  document.getElementById("compAttack").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("compAttackValue").textContent = `${(
+      value * 1000
+    ).toFixed(0)} ms`;
+    if (compressorNode) compressorNode.attack.value = value;
+  });
+
+  document.getElementById("compRelease").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("compReleaseValue").textContent = `${(
+      value * 1000
+    ).toFixed(0)} ms`;
+    if (compressorNode) compressorNode.release.value = value;
+  });
+
+  // Limitador
+  document.getElementById("limiterToggle").addEventListener("change", () => {
+    reconnectAudioGraph();
+  });
+
+  document.getElementById("limiterCeiling").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById(
+      "limiterCeilingValue"
+    ).textContent = `${value.toFixed(1)} dB`;
+    if (limiterNode) limiterNode.threshold.value = value;
+  });
+
+  // Reverb/Delay
+  document.getElementById("reverbToggle").addEventListener("change", () => {
+    reconnectAudioGraph();
+  });
+
+  document.getElementById("delayTime").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("delayTimeValue").textContent = `${(
+      value * 1000
+    ).toFixed(0)} ms`;
+    if (delayNode) delayNode.delayTime.value = value;
+  });
+
+  document.getElementById("delayFeedback").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("delayFeedbackValue").textContent = `${(
+      value * 100
+    ).toFixed(0)}%`;
+    if (delayFeedback) delayFeedback.gain.value = value;
+  });
+
+  document.getElementById("reverbMix").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value) / 100;
+    document.getElementById("reverbMixValue").textContent = `${(
+      value * 100
+    ).toFixed(0)}%`;
+    if (delayWetGain) delayWetGain.gain.value = value;
+    if (delayDryGain) delayDryGain.gain.value = 1 - value;
   });
 
   // Cargar configuración guardada

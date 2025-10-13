@@ -87,7 +87,7 @@ function createWindow() {
   // Cargar interfaz
   win.loadFile("index.html");
 
-  // Si quieres ver logs del renderizador, descomenta:
+  // DevTools para debugging (comentar en producción)
   // win.webContents.openDevTools({ mode: 'detach' });
 
   // Mensaje en consola cuando la app esté lista

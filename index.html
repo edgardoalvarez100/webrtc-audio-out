@@ -688,6 +688,102 @@
             color: var(--text-primary);
             font-weight: 500;
         }
+
+        /* Estilos para Complementos de Audio */
+        .plugin-section {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid var(--border-primary);
+        }
+
+        .plugin-header h3 {
+            margin: 0;
+            font-size: 16px;
+            color: var(--text-primary);
+        }
+
+        .plugin-content {
+            margin-top: 16px;
+        }
+
+        /* Ecualizador */
+        .eq-container {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-end;
+            gap: 8px;
+            padding: 20px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            min-height: 200px;
+        }
+
+        .eq-band {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .eq-band label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            writing-mode: horizontal-tb;
+        }
+
+        .eq-band input[type="range"] {
+            -webkit-appearance: slider-vertical;
+            writing-mode: bt-lr;
+            width: 6px;
+            height: 150px;
+            padding: 0;
+        }
+
+        .eq-band .eq-value {
+            font-size: 11px;
+            color: var(--accent-green);
+            font-family: 'Courier New', monospace;
+            min-width: 45px;
+            text-align: center;
+        }
+
+        /* Grid de controles */
+        .control-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }
+
+        .control-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-item label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .control-item label span {
+            color: var(--accent-green);
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }
+
+        .control-item input[type="range"] {
+            width: 100%;
+        }
+
+        .control-item small {
+            font-size: 11px;
+            margin-top: -4px;
+        }
     </style>
 </head>
 
@@ -721,6 +817,7 @@
                 <button id="btnConnect" class="btn-primary">▶ Conectar</button>
                 <button id="btnTest" class="btn-secondary">🔊 Probar Tono</button>
                 <button id="btnStreamInfo" class="btn-secondary">📊 Info Stream</button>
+                <button id="btnPlugins" class="btn-secondary">🎛️ Complementos</button>
                 <button id="btnSettings" class="btn-secondary">⚙️ Configuración</button>
             </div>
         </div>
@@ -918,6 +1015,184 @@
                         💡 La aplicación se conectará automáticamente a la URL WHEP guardada
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Complementos de Audio -->
+    <div class="modal" id="pluginsModal">
+        <div class="modal-content" style="max-width: 1000px; width: 95%;">
+            <div class="modal-header">
+                <h2>🎛️ Complementos de Audio</h2>
+                <button class="close-btn" id="closePluginsModal">✕</button>
+            </div>
+            <div class="modal-body" style="max-height: 75vh; overflow-y: auto; padding: 24px;">
+
+                <!-- Ecualizador -->
+                <div class="plugin-section">
+                    <div class="plugin-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <h3>📊 Ecualizador (10 Bandas)</h3>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="eqToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="plugin-content" id="eqContent">
+                        <div class="eq-container">
+                            <div class="eq-band">
+                                <label>32 Hz</label>
+                                <input type="range" id="eq32" min="-12" max="12" value="0" step="0.5" orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                            <div class="eq-band">
+                                <label>64 Hz</label>
+                                <input type="range" id="eq64" min="-12" max="12" value="0" step="0.5" orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                            <div class="eq-band">
+                                <label>125 Hz</label>
+                                <input type="range" id="eq125" min="-12" max="12" value="0" step="0.5"
+                                    orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                            <div class="eq-band">
+                                <label>250 Hz</label>
+                                <input type="range" id="eq250" min="-12" max="12" value="0" step="0.5"
+                                    orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                            <div class="eq-band">
+                                <label>500 Hz</label>
+                                <input type="range" id="eq500" min="-12" max="12" value="0" step="0.5"
+                                    orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                            <div class="eq-band">
+                                <label>1 kHz</label>
+                                <input type="range" id="eq1k" min="-12" max="12" value="0" step="0.5" orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                            <div class="eq-band">
+                                <label>2 kHz</label>
+                                <input type="range" id="eq2k" min="-12" max="12" value="0" step="0.5" orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                            <div class="eq-band">
+                                <label>4 kHz</label>
+                                <input type="range" id="eq4k" min="-12" max="12" value="0" step="0.5" orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                            <div class="eq-band">
+                                <label>8 kHz</label>
+                                <input type="range" id="eq8k" min="-12" max="12" value="0" step="0.5" orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                            <div class="eq-band">
+                                <label>16 kHz</label>
+                                <input type="range" id="eq16k" min="-12" max="12" value="0" step="0.5"
+                                    orient="vertical">
+                                <span class="eq-value">0 dB</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: center; margin-top: 16px;">
+                            <button id="eqReset" class="btn-secondary"
+                                style="padding: 10px 24px; font-size: 13px; font-weight: 600;">
+                                🔄 Resetear EQ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compresor -->
+                <div class="plugin-section">
+                    <div class="plugin-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <h3>🎚️ Compresor Dinámico</h3>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="compressorToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="plugin-content" id="compressorContent">
+                        <div class="control-grid">
+                            <div class="control-item">
+                                <label>Threshold: <span id="compThresholdValue">-24 dB</span></label>
+                                <input type="range" id="compThreshold" min="-100" max="0" value="-24" step="1">
+                            </div>
+                            <div class="control-item">
+                                <label>Knee: <span id="compKneeValue">30 dB</span></label>
+                                <input type="range" id="compKnee" min="0" max="40" value="30" step="1">
+                            </div>
+                            <div class="control-item">
+                                <label>Ratio: <span id="compRatioValue">12:1</span></label>
+                                <input type="range" id="compRatio" min="1" max="20" value="12" step="0.5">
+                            </div>
+                            <div class="control-item">
+                                <label>Attack: <span id="compAttackValue">3 ms</span></label>
+                                <input type="range" id="compAttack" min="0" max="1" value="0.003" step="0.001">
+                            </div>
+                            <div class="control-item">
+                                <label>Release: <span id="compReleaseValue">250 ms</span></label>
+                                <input type="range" id="compRelease" min="0" max="1" value="0.25" step="0.01">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Limitador -->
+                <div class="plugin-section">
+                    <div class="plugin-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <h3>🔒 Limitador</h3>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="limiterToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="plugin-content" id="limiterContent">
+                        <div class="control-grid">
+                            <div class="control-item">
+                                <label>Ceiling: <span id="limiterCeilingValue">-0.1 dB</span></label>
+                                <input type="range" id="limiterCeiling" min="-10" max="0" value="-0.1" step="0.1">
+                                <small style="color: var(--text-secondary);">Nivel máximo de salida</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reverb/Delay -->
+                <div class="plugin-section">
+                    <div class="plugin-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <h3>🌊 Reverb / Delay</h3>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="reverbToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="plugin-content" id="reverbContent">
+                        <div class="control-grid">
+                            <div class="control-item">
+                                <label>Delay Time: <span id="delayTimeValue">500 ms</span></label>
+                                <input type="range" id="delayTime" min="0" max="2" value="0.5" step="0.01">
+                            </div>
+                            <div class="control-item">
+                                <label>Delay Feedback: <span id="delayFeedbackValue">30%</span></label>
+                                <input type="range" id="delayFeedback" min="0" max="0.9" value="0.3" step="0.05">
+                            </div>
+                            <div class="control-item">
+                                <label>Wet/Dry Mix: <span id="reverbMixValue">20%</span></label>
+                                <input type="range" id="reverbMix" min="0" max="100" value="20" step="1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
