@@ -33,6 +33,8 @@
             background: linear-gradient(135deg, var(--bg-primary) 0%, #0a0e14 100%);
             color: var(--text-primary);
             min-height: 100vh;
+            font-size: 12px;
+            /* Tamaño base reducido (era implícitamente ~16px) */
         }
 
         .wrap {
@@ -56,7 +58,8 @@
         }
 
         .app-title {
-            font-size: 28px;
+            font-size: 22px;
+            /* Reducido para coincidir con medium */
             font-weight: 700;
             margin: 0;
             background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
@@ -66,7 +69,8 @@
         }
 
         .app-subtitle {
-            font-size: 14px;
+            font-size: 12px;
+            /* Reducido para coincidir con medium */
             color: var(--text-secondary);
             margin: 8px 0 0;
         }
@@ -87,7 +91,8 @@
         }
 
         .card-title {
-            font-size: 14px;
+            font-size: 12px;
+            /* Reducido de 14px para coincidir con medium */
             font-weight: 600;
             color: var(--accent-green);
             margin: 0 0 16px;
@@ -536,53 +541,89 @@
 
         /* Tamaños de fuente */
         body.font-small {
-            font-size: 12px;
+            font-size: 10px;
+            /* Más legible que 8px */
         }
 
         body.font-small .app-title {
-            font-size: 22px;
+            font-size: 18px;
+            /* Proporcionalmente ajustado */
         }
 
         body.font-small .app-subtitle {
-            font-size: 12px;
+            font-size: 10px;
+            /* Más legible */
         }
 
         body.font-small .card-title {
-            font-size: 12px;
+            font-size: 10px;
+            /* Más legible */
         }
 
         body.font-small button,
         body.font-small input,
         body.font-small select {
-            font-size: 12px;
-            padding: 8px 14px;
+            font-size: 10px;
+            /* Más legible */
+            padding: 7px 12px;
+            /* Padding ajustado */
         }
 
         body.font-medium {
-            font-size: 14px;
+            font-size: 12px;
+            /* Era 14px, ahora es igual al "small" anterior */
+        }
+
+        body.font-medium .app-title {
+            font-size: 22px;
+            /* Igual al "small" anterior */
+        }
+
+        body.font-medium .app-subtitle {
+            font-size: 12px;
+            /* Igual al "small" anterior */
+        }
+
+        body.font-medium .card-title {
+            font-size: 12px;
+            /* Igual al "small" anterior */
+        }
+
+        body.font-medium button,
+        body.font-medium input,
+        body.font-medium select {
+            font-size: 12px;
+            /* Igual al "small" anterior */
+            padding: 8px 14px;
         }
 
         body.font-large {
-            font-size: 16px;
+            font-size: 14px;
+            /* Era 16px, ahora es igual al "medium" anterior */
         }
 
         body.font-large .app-title {
-            font-size: 32px;
+            font-size: 28px;
+            /* Reducido desde 32px */
         }
 
         body.font-large .app-subtitle {
-            font-size: 16px;
+            font-size: 14px;
+            /* Era 16px, ahora igual al "medium" anterior */
         }
 
         body.font-large .card-title {
-            font-size: 16px;
+            font-size: 14px;
+            /* Era 16px, ahora igual al "medium" anterior */
         }
 
         body.font-large button,
         body.font-large input,
         body.font-large select {
-            font-size: 16px;
-            padding: 12px 18px;
+            font-size: 14px;
+            /* Era 16px, ahora igual al "medium" anterior */
+            padding: 10px 16px;
+            /* Ajustado padding */
         }
 
         /* Estilos para opciones de configuración */
@@ -772,7 +813,7 @@
         .control-item {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 1px;
         }
 
         .control-item label {
@@ -791,11 +832,17 @@
 
         .control-item input[type="range"] {
             width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .control-item small {
             font-size: 11px;
             margin-top: -4px;
+        }
+
+        .plugin-section {
+            overflow: hidden;
         }
     </style>
 </head>
@@ -832,6 +879,13 @@
                 <button id="btnStreamInfo" class="btn-secondary">📊 Info Stream</button>
                 <button id="btnPlugins" class="btn-secondary">🎛️ Complementos</button>
                 <button id="btnSettings" class="btn-secondary">⚙️ Configuración</button>
+            </div>
+            <!-- Tiempo de conexión -->
+            <div
+                style="margin-top: 12px; padding: 10px; background: var(--bg-secondary); border-radius: 6px; text-align: center;">
+                <span style="font-size: 9px; color: var(--text-secondary);">⏱️ Tiempo conectado:</span>
+                <span id="connectionTime"
+                    style="font-size: 13px; font-weight: 700; color: var(--accent-color); margin-left: 8px; font-family: 'Courier New', monospace;">--:--:--</span>
             </div>
         </div>
 
@@ -873,12 +927,37 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Indicador de Compresión -->
+            <div
+                style="margin-top: 16px; display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div id="compressorIndicator"
+                        style="width: 16px; height: 16px; border-radius: 50%; background: #666; transition: all 0.15s ease; box-shadow: 0 0 0 rgba(255, 193, 7, 0);">
+                    </div>
+                    <span style="font-size: 14px; font-weight: 500; color: var(--text-primary);">Compresor</span>
+                </div>
+                <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 12px; color: var(--text-secondary);">Reducción:</span>
+                    <span id="compressionReduction"
+                        style="font-size: 13px; font-weight: 600; color: var(--accent-color); min-width: 50px;">0.0
+                        dB</span>
+                </div>
+            </div>
         </div>
 
         <!-- Info dispositivo -->
         <div style="text-align: center; padding: 12px;">
             <span class="label">📱 Dispositivo activo: <span id="dev" class="muted"
                     style="color: var(--accent-green);">default</span></span>
+        </div>
+
+        <!-- Footer con versión -->
+        <div
+            style="text-align: center; padding: 16px 12px; margin-top: 8px; border-top: 1px solid var(--border-primary); color: var(--text-secondary); font-size: 12px;">
+            <span>WebRTC Audio Out v1.0.1</span>
+            <span style="margin: 0 8px;">•</span>
+            <span id="appYear">2025</span>
         </div>
     </div>
 
@@ -1034,12 +1113,13 @@
 
     <!-- Modal de Complementos de Audio -->
     <div class="modal" id="pluginsModal">
-        <div class="modal-content" style="max-width: 900px; width: 95%;">
-            <div class="modal-header">
+        <div class="modal-content" style="max-width: 900px; width: 95%; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header"
+                style="top: 0; background: var(--bg-card); z-index: 10; margin: 0; padding: 20px 24px; border-bottom: 2px solid var(--border-primary);">
                 <h2>🎛️ Complementos de Audio</h2>
                 <button class="close-btn" id="closePluginsModal">✕</button>
             </div>
-            <div class="modal-body" style="max-height: 75vh; overflow-y: auto; padding: 24px;">
+            <div class="modal-body" style="padding: 24px;">
 
                 <!-- Ecualizador -->
                 <div class="plugin-section">
@@ -1150,6 +1230,11 @@
                             <div class="control-item">
                                 <label>Release: <span id="compReleaseValue">250 ms</span></label>
                                 <input type="range" id="compRelease" min="0" max="1" value="0.25" step="0.01">
+                            </div>
+                            <div class="control-item">
+                                <label>Makeup Gain: <span id="compGainValue">0 dB</span></label>
+                                <input type="range" id="compGain" min="0" max="24" value="0" step="0.5">
+                                <small style="color: var(--text-secondary);">Ganancia de compensación</small>
                             </div>
                         </div>
                     </div>

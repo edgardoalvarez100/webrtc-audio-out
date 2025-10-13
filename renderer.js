@@ -66,11 +66,24 @@
   // Para complementos de audio
   let eqNodes = []; // Array de 10 filtros para ecualizador
   let compressorNode = null;
+  let compressorGainNode = null; // Ganancia de compensación del compresor
   let limiterNode = null;
   let delayNode = null;
   let delayFeedback = null;
   let delayWetGain = null;
   let delayDryGain = null;
+
+  // Para indicador de compresión
+  let compressionIndicator = null;
+  let compressionReductionText = null;
+  let lastReduction = 0;
+
+  // Para contador de tiempo de conexión
+  let connectionStartTime = null;
+  let connectionTimerInterval = null;
+
+  // Para actualización en tiempo real de estadísticas
+  let streamStatsInterval = null;
 
   // Para "Probar tono"
   let testCtx = null,
@@ -385,6 +398,9 @@
         currentDbRight,
         peakDbRight
       );
+
+      // Actualizar indicador de compresión
+      updateCompressionIndicator();
     }
 
     draw();
@@ -395,6 +411,25 @@
       cancelAnimationFrame(volumeterAnimationId);
       volumeterAnimationId = null;
       clearVolumeter();
+      // Resetear indicador de compresión
+      resetCompressionIndicator();
+    }
+  }
+
+  function resetCompressionIndicator() {
+    if (!compressionIndicator) {
+      compressionIndicator = document.getElementById("compressorIndicator");
+      compressionReductionText = document.getElementById(
+        "compressionReduction"
+      );
+    }
+
+    if (compressionIndicator && compressionReductionText) {
+      compressionIndicator.style.background = "#666";
+      compressionIndicator.style.boxShadow = "0 0 0 rgba(255, 193, 7, 0)";
+      compressionReductionText.textContent = "0.0 dB";
+      compressionReductionText.style.color = "var(--text-secondary)";
+      lastReduction = 0;
     }
   }
 
@@ -540,22 +575,134 @@
     volumeterValueRight.style.color = "#2ecc71";
   }
 
-  function applyVolume() {
-    // Control de volumen directo en el elemento de audio
-    // Ya no usamos GainNode, solo el volumen HTML5
-    if (audioEl) {
-      // Para volumen <= 100%, usar directamente
-      if (VOLUME <= 100) {
-        audioEl.volume = VOLUME / 100;
-      } else {
-        // Para volumen > 100%, poner el elemento en 1.0
-        // (no podemos amplificar sin Web Audio API completo)
-        audioEl.volume = 1.0;
-      }
-      debugLog(
-        `Volumen aplicado: ${VOLUME}% (audioEl.volume: ${audioEl.volume})`
+  // Función para actualizar el indicador de compresión
+  function updateCompressionIndicator() {
+    // Obtener referencias a los elementos (solo una vez)
+    if (!compressionIndicator) {
+      compressionIndicator = document.getElementById("compressorIndicator");
+      compressionReductionText = document.getElementById(
+        "compressionReduction"
       );
     }
+
+    if (!compressionIndicator || !compressionReductionText) return;
+
+    // Verificar si el compresor está habilitado y existe
+    const compEnabled = document.getElementById("compressorToggle")?.checked;
+    if (!compEnabled || !compressorNode) {
+      // Compresor deshabilitado - bombillo apagado
+      compressionIndicator.style.background = "#666";
+      compressionIndicator.style.boxShadow = "0 0 0 rgba(255, 193, 7, 0)";
+      compressionReductionText.textContent = "0.0 dB";
+      compressionReductionText.style.color = "var(--text-secondary)";
+      lastReduction = 0;
+      return;
+    }
+
+    // Leer la reducción del compresor (valor negativo en dB)
+    // La propiedad 'reduction' del DynamicsCompressorNode indica cuánta reducción de ganancia se está aplicando
+    const reduction = compressorNode.reduction;
+
+    // Suavizar el valor para evitar parpadeo
+    lastReduction = lastReduction * 0.85 + reduction * 0.15;
+
+    // Actualizar el texto de reducción
+    compressionReductionText.textContent = `${Math.abs(lastReduction).toFixed(
+      1
+    )} dB`;
+
+    // Si hay compresión activa (reducción > 0.5 dB)
+    if (Math.abs(lastReduction) > 0.5) {
+      // Bombillo encendido (amarillo/naranja)
+      const intensity = Math.min(Math.abs(lastReduction) / 12, 1); // Normalizar a 0-1
+      const glowIntensity = 5 + intensity * 10; // Brillo de 5 a 15px
+
+      compressionIndicator.style.background = "#ffc107"; // Amarillo/ámbar
+      compressionIndicator.style.boxShadow = `0 0 ${glowIntensity}px rgba(255, 193, 7, ${
+        0.6 + intensity * 0.4
+      })`;
+      compressionReductionText.style.color = "#ffc107";
+    } else {
+      // Bombillo apagado (gris)
+      compressionIndicator.style.background = "#666";
+      compressionIndicator.style.boxShadow = "0 0 0 rgba(255, 193, 7, 0)";
+      compressionReductionText.style.color = "var(--text-secondary)";
+    }
+  }
+
+  function applyVolume() {
+    // Control de volumen a través del GainNode del Web Audio API
+    if (gainNode) {
+      // Convertir porcentaje a valor de ganancia (0-1.5 para permitir hasta 150%)
+      gainNode.gain.value = VOLUME / 100;
+      debugLog(
+        `Volumen aplicado: ${VOLUME}% (gainNode.gain.value: ${gainNode.gain.value})`
+      );
+    } else {
+      debugWarn("GainNode no disponible para aplicar volumen");
+    }
+
+    // Mantener audioEl muted ya que el audio pasa por Web Audio API
+    if (audioEl) {
+      audioEl.volume = 0;
+      audioEl.muted = true;
+    }
+  }
+
+  // ========== TEMPORIZADOR DE CONEXIÓN ==========
+
+  function startConnectionTimer() {
+    // Detener timer anterior si existe
+    stopConnectionTimer();
+
+    // Registrar tiempo de inicio
+    connectionStartTime = Date.now();
+
+    // Actualizar cada segundo
+    connectionTimerInterval = setInterval(() => {
+      updateConnectionTime();
+    }, 1000);
+
+    // Actualizar inmediatamente
+    updateConnectionTime();
+
+    debugLog("⏱️ Temporizador de conexión iniciado");
+  }
+
+  function stopConnectionTimer() {
+    if (connectionTimerInterval) {
+      clearInterval(connectionTimerInterval);
+      connectionTimerInterval = null;
+    }
+    connectionStartTime = null;
+
+    // Resetear display
+    const timeElement = document.getElementById("connectionTime");
+    if (timeElement) {
+      timeElement.textContent = "--:--:--";
+    }
+
+    debugLog("⏱️ Temporizador de conexión detenido");
+  }
+
+  function updateConnectionTime() {
+    if (!connectionStartTime) return;
+
+    const timeElement = document.getElementById("connectionTime");
+    if (!timeElement) return;
+
+    // Calcular tiempo transcurrido
+    const elapsed = Date.now() - connectionStartTime;
+    const seconds = Math.floor(elapsed / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    // Formatear como HH:MM:SS
+    const displayHours = String(hours).padStart(2, "0");
+    const displayMinutes = String(minutes % 60).padStart(2, "0");
+    const displaySeconds = String(seconds % 60).padStart(2, "0");
+
+    timeElement.textContent = `${displayHours}:${displayMinutes}:${displaySeconds}`;
   }
 
   // ========== COMPLEMENTOS DE AUDIO ==========
@@ -586,6 +733,10 @@
     compressorNode.ratio.value = 12;
     compressorNode.attack.value = 0.003;
     compressorNode.release.value = 0.25;
+
+    // GainNode para makeup gain del compresor
+    compressorGainNode = audioCtx.createGain();
+    compressorGainNode.gain.value = 1.0; // 0 dB (sin ganancia adicional)
 
     // Inicializar Limitador (otro compresor con parámetros extremos)
     limiterNode = audioCtx.createDynamicsCompressor();
@@ -638,6 +789,10 @@
         try {
           compressorNode.disconnect();
         } catch (e) {}
+      if (compressorGainNode)
+        try {
+          compressorGainNode.disconnect();
+        } catch (e) {}
       eqNodes.forEach((node) => {
         try {
           node.disconnect();
@@ -674,10 +829,12 @@
       // Conectar Compresor si está habilitado
       const compToggleEl = document.getElementById("compressorToggle");
       const compEnabled = compToggleEl ? compToggleEl.checked : false;
-      if (compEnabled && compressorNode) {
+      if (compEnabled && compressorNode && compressorGainNode) {
+        // Cadena: currentNode → compressor → compressorGain → siguiente nodo
         currentNode.connect(compressorNode);
-        currentNode = compressorNode;
-        debugLog("✅ Compresor conectado");
+        compressorNode.connect(compressorGainNode);
+        currentNode = compressorGainNode;
+        debugLog("✅ Compresor con makeup gain conectado");
       }
 
       // Conectar Delay/Reverb si está habilitado
@@ -790,6 +947,7 @@
           release: parseFloat(
             document.getElementById("compRelease")?.value || 0.25
           ),
+          gain: parseFloat(document.getElementById("compGain")?.value || 0),
         },
 
         // Limitador
@@ -934,6 +1092,22 @@
           ).toFixed(0)} ms`;
           if (compressorNode)
             compressorNode.release.value = config.compressor.release;
+        }
+        if (
+          document.getElementById("compGain") &&
+          config.compressor.gain !== undefined
+        ) {
+          document.getElementById("compGain").value = config.compressor.gain;
+          document.getElementById("compGainValue").textContent = `${
+            config.compressor.gain >= 0 ? "+" : ""
+          }${config.compressor.gain.toFixed(1)} dB`;
+          if (compressorGainNode) {
+            // Convertir dB a ganancia lineal
+            compressorGainNode.gain.value = Math.pow(
+              10,
+              config.compressor.gain / 20
+            );
+          }
         }
       }
 
@@ -1493,6 +1667,9 @@
 
       setStatus("reproduciendo ✓", "ok");
       updateConnectButton(true);
+
+      // Iniciar temporizador de conexión
+      startConnectionTimer();
     };
 
     const offer = await pc.createOffer();
@@ -1589,6 +1766,9 @@
     } catch {}
     pc = null;
 
+    // Detener temporizador de conexión durante reconexión
+    stopConnectionTimer();
+
     if (abortReconnect) return;
 
     setStatus(`reconectando en ${RECONNECT_MS / 1000}s…`, "muted");
@@ -1616,6 +1796,9 @@
       clearInterval(bytesMonitorInterval);
       bytesMonitorInterval = null;
     }
+
+    // Detener temporizador de conexión
+    stopConnectionTimer();
 
     // Solo limpiar el stream, NO los nodos de audio (se reutilizan)
     audioEl.srcObject = null;
@@ -1952,19 +2135,46 @@
   btnStreamInfo.addEventListener("click", () => {
     streamInfoModal.classList.add("show");
     updateStreamInfo();
+    // Iniciar actualización automática cada segundo
+    startStatsUpdate();
   });
 
   // Cerrar modal
   closeModal.addEventListener("click", () => {
     streamInfoModal.classList.remove("show");
+    // Detener actualización automática
+    stopStatsUpdate();
   });
 
   // Cerrar modal al hacer clic fuera
   streamInfoModal.addEventListener("click", (e) => {
     if (e.target === streamInfoModal) {
       streamInfoModal.classList.remove("show");
+      // Detener actualización automática
+      stopStatsUpdate();
     }
   });
+
+  // Funciones para controlar actualización automática de estadísticas
+  function startStatsUpdate() {
+    // Detener intervalo previo si existe
+    stopStatsUpdate();
+
+    // Actualizar cada segundo
+    streamStatsInterval = setInterval(() => {
+      updateStreamInfo();
+    }, 1000);
+
+    debugLog("📊 Actualización automática de estadísticas iniciada");
+  }
+
+  function stopStatsUpdate() {
+    if (streamStatsInterval) {
+      clearInterval(streamStatsInterval);
+      streamStatsInterval = null;
+      debugLog("📊 Actualización automática de estadísticas detenida");
+    }
+  }
 
   // Función para actualizar la información del stream
   async function updateStreamInfo() {
@@ -2054,15 +2264,24 @@
         if (!updateStreamInfo.prevBytes) {
           updateStreamInfo.prevBytes = bytesReceived;
           updateStreamInfo.prevTime = timestamp;
+          updateStreamInfo.lastBitrate = 0;
         }
 
         const bytesDiff = bytesReceived - updateStreamInfo.prevBytes;
         const timeDiff = (timestamp - updateStreamInfo.prevTime) / 1000; // a segundos
 
-        if (timeDiff > 0) {
+        if (timeDiff > 0 && bytesDiff > 0) {
           const bitrate = (bytesDiff * 8) / timeDiff / 1000; // kbps
+          updateStreamInfo.lastBitrate = bitrate;
           document.getElementById("info-bitrate").textContent =
             bitrate.toFixed(1) + " kbps";
+        } else if (updateStreamInfo.lastBitrate !== undefined) {
+          // Mostrar el último bitrate conocido si no hay cambios aún
+          document.getElementById("info-bitrate").textContent =
+            updateStreamInfo.lastBitrate.toFixed(1) + " kbps";
+        } else {
+          // Primera vez, mostrar 0
+          document.getElementById("info-bitrate").textContent = "0.0 kbps";
         }
 
         updateStreamInfo.prevBytes = bytesReceived;
@@ -2235,6 +2454,18 @@
     savePluginsConfig();
   });
 
+  document.getElementById("compGain").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("compGainValue").textContent = `${
+      value >= 0 ? "+" : ""
+    }${value.toFixed(1)} dB`;
+    if (compressorGainNode) {
+      // Convertir dB a ganancia lineal: gain = 10^(dB/20)
+      compressorGainNode.gain.value = Math.pow(10, value / 20);
+    }
+    savePluginsConfig();
+  });
+
   // Limitador
   document.getElementById("limiterToggle").addEventListener("change", () => {
     reconnectAudioGraph();
@@ -2390,6 +2621,12 @@
   setStatus("iniciando…", "muted");
 
   try {
+    // Actualizar año en footer
+    const yearElement = document.getElementById("appYear");
+    if (yearElement) {
+      yearElement.textContent = new Date().getFullYear();
+    }
+
     // Cargar configuración
     await loadConfig();
 
