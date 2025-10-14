@@ -768,8 +768,10 @@
             gap: 3px;
             flex: 0 1 auto;
             min-width: 0;
-            max-width: 60px;
-            padding: 0 6px;
+            max-width: 40px;
+            /* Reducido de 60px a 40px */
+            padding: 0 4px;
+            /* Reducido padding de 6px a 4px */
             border-right: 1px solid var(--border-primary);
         }
 
@@ -790,6 +792,8 @@
             -webkit-appearance: slider-vertical;
             writing-mode: bt-lr;
             width: 3px;
+            min-width: 3px;
+            /* Sobrescribe el min-width general de 150px */
             height: 90px;
             padding: 0;
         }
