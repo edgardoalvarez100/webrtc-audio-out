@@ -2478,6 +2478,11 @@
       return;
     }
 
+    // Bloquear botón y mostrar estado "conectando"
+    btnConnect.disabled = true;
+    btnConnect.textContent = "⏳ Conectando...";
+    setStatus("conectando...", "muted");
+
     try {
       // Asegurar que el AudioContext esté activo (requiere interacción del usuario)
       if (audioCtx && audioCtx.state === "suspended") {
@@ -2486,10 +2491,11 @@
       }
 
       await connectWHEP();
+      // updateConnectButton se llama dentro de connectWHEP al completar
     } catch (e) {
       console.error("Connect error:", e);
       setStatus("error: " + e.message, "bad");
-      updateConnectButton(false);
+      updateConnectButton(false); // Esto desbloqueará el botón
     }
   });
 
