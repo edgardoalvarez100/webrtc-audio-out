@@ -3053,4 +3053,45 @@
     console.error("Error en arranque:", e);
     setStatus("error de arranque: " + e.message, "bad");
   }
+
+  // === AUTO-UPDATER - Listener para actualización descargada ===
+  window.electronAPI.onUpdateDownloaded((version) => {
+    console.log("🔄 Actualización descargada: v" + version);
+
+    // Mostrar notificación al usuario
+    const notification = document.createElement("div");
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px 24px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 10000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 350px;
+    `;
+    notification.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 24px;">🎉</span>
+        <div>
+          <div style="font-weight: 600; margin-bottom: 4px;">¡Actualización lista!</div>
+          <div style="font-size: 13px; opacity: 0.9;">
+            Versión ${version} se instalará al cerrar la aplicación
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(notification);
+
+    // Auto-ocultar después de 10 segundos
+    setTimeout(() => {
+      notification.style.transition = "opacity 0.5s";
+      notification.style.opacity = "0";
+      setTimeout(() => notification.remove(), 500);
+    }, 10000);
+  });
 })();

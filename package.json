@@ -1,21 +1,90 @@
 {
   "name": "webrtc-audio-out",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Cliente WebRTC que recibe audio por WHEP y lo envía a una tarjeta de audio específica con reconexión automática.",
   "main": "main.js",
   "private": true,
+  "author": "Edgardo Alvarez",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edgardoalvarez100/webrtc-audio-out.git"
+  },
   "scripts": {
     "start": "electron .",
-    "build-win": "electron-packager . webrtc-audio-out --platform=win32 --arch=x64 --overwrite --icon=assets/app.ico",
-    "build-mac": "electron-packager . webrtc-audio-out --platform=darwin --arch=arm64 --overwrite",
-    "build-linux": "electron-packager . webrtc-audio-out --platform=linux --arch=x64 --overwrite"
+    "build-win": "electron-builder --win --x64",
+    "build-win-portable": "electron-builder --win portable --x64",
+    "build-mac": "electron-builder --mac",
+    "build-linux": "electron-builder --linux",
+    "publish": "electron-builder --win --x64 --publish always"
+  },
+  "build": {
+    "appId": "com.edgardoalvarez.webrtc-audio-out",
+    "productName": "WebRTC Audio Out",
+    "copyright": "Copyright © 2025 Edgardo Alvarez",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/*.md",
+      "!webrtc-audio-out-win32-x64/**",
+      "!dist/**",
+      "!node_modules/**/@types/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/app.ico",
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "WebRTC Audio Out",
+      "perMachine": false,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "assets/app.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Audio",
+      "icon": "assets/app.png"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "edgardoalvarez100",
+      "repo": "webrtc-audio-out",
+      "private": false,
+      "releaseType": "release"
+    }
   },
   "dependencies": {
     "dotenv": "^16.6.1",
-    "electron-store": "^9.0.0"
+    "electron-store": "^9.0.0",
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "electron": "^31.3.0",
+    "electron-builder": "^26.0.12",
     "electron-packager": "^17.1.2"
   }
 }

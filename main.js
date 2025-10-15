@@ -6,6 +6,7 @@ const {
   ipcMain,
 } = require("electron");
 const path = require("path");
+const { autoUpdater } = require("electron-updater");
 const ConfigManager = require("./config");
 
 // === 🧱 FLAGS PARA EVITAR ERRORES DE GPU CACHE ===
@@ -14,6 +15,10 @@ app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
 // =================================================
+
+// Configurar auto-updater
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
 
 // Usar configuración local (en la carpeta de la aplicación)
 // Esto permite múltiples instancias con configuraciones independientes
@@ -103,9 +108,57 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = "dark";
   createWindow();
 
+  // Verificar actualizaciones después de 3 segundos
+  setTimeout(() => {
+    checkForUpdates();
+  }, 3000);
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+// === AUTO-UPDATER ===
+function checkForUpdates() {
+  console.log("🔍 Verificando actualizaciones...");
+  autoUpdater.checkForUpdatesAndNotify();
+}
+
+// Eventos del auto-updater
+autoUpdater.on("checking-for-update", () => {
+  console.log("🔍 Buscando actualizaciones...");
+});
+
+autoUpdater.on("update-available", (info) => {
+  console.log("✅ Actualización disponible:", info.version);
+  console.log("📦 Descargando actualización...");
+});
+
+autoUpdater.on("update-not-available", (info) => {
+  console.log("✅ La aplicación está actualizada (v" + info.version + ")");
+});
+
+autoUpdater.on("error", (err) => {
+  console.log("❌ Error en auto-updater:", err);
+});
+
+autoUpdater.on("download-progress", (progressObj) => {
+  let log_message = "📥 Descargando: " + progressObj.percent.toFixed(2) + "%";
+  log_message +=
+    " (" + (progressObj.transferred / 1024 / 1024).toFixed(2) + "MB";
+  log_message += " / " + (progressObj.total / 1024 / 1024).toFixed(2) + "MB)";
+  console.log(log_message);
+});
+
+autoUpdater.on("update-downloaded", (info) => {
+  console.log("✅ Actualización descargada");
+  console.log("🔄 La actualización se instalará al cerrar la aplicación");
+
+  // Notificar al usuario
+  const win = BrowserWindow.getAllWindows()[0];
+  if (win) {
+    win.webContents.send("update-downloaded", info.version);
+  }
 });
 
 // Salir en Windows/Linux al cerrar todas las ventanas

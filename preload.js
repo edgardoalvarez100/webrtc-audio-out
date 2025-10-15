@@ -11,4 +11,9 @@ contextBridge.exposeInMainWorld("webrtcCfg", {
 contextBridge.exposeInMainWorld("electronAPI", {
   setAutostart: (enabled) => ipcRenderer.invoke("set-autostart", enabled),
   getAutostart: () => ipcRenderer.invoke("get-autostart"),
+
+  // Listener para actualizaciones
+  onUpdateDownloaded: (callback) => {
+    ipcRenderer.on("update-downloaded", (event, version) => callback(version));
+  },
 });
