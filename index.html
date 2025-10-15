@@ -768,11 +768,11 @@
             gap: 3px;
             flex: 0 1 auto;
             min-width: 0;
-            max-width: 40px;
+            max-width: 50px;
             /* Reducido de 60px a 40px */
             padding: 0 4px;
             /* Reducido padding de 6px a 4px */
-            border-right: 1px solid var(--border-primary);
+            border-right: 2px solid var(--border-primary);
         }
 
         .eq-band:last-child {
@@ -946,6 +946,20 @@
                     <span id="compressionReduction"
                         style="font-size: 13px; font-weight: 600; color: var(--accent-color); min-width: 50px;">0.0
                         dB</span>
+                </div>
+            </div>
+
+            <!-- Analizador de Espectro (RTA) -->
+            <div style="margin-top: 16px;">
+                <div
+                    style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; text-align: center;">
+                    📊 Analizador de Espectro
+                </div>
+                <canvas id="spectrumAnalyzer" width="500" height="150"
+                    style="width: 100%; height: 150px; border-radius: 8px 8px 0 0; background: var(--bg-secondary);"></canvas>
+                <!-- Etiquetas de frecuencia (20Hz - 20kHz) -->
+                <div id="spectrumLabels"
+                    style="display: flex; justify-content: space-between; height: 20px; padding: 4px 4px; background: var(--bg-secondary); border-radius: 0 0 8px 8px; font-size: 9px; color: var(--text-secondary);">
                 </div>
             </div>
         </div>
@@ -1125,6 +1139,39 @@
             </div>
             <div class="modal-body" style="padding: 24px;">
 
+                <!-- Noise Gate (Reductor de Ruido) -->
+                <div class="plugin-section">
+                    <div class="plugin-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <h3>🔇 Reductor de Ruido</h3>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="noiseGateToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="plugin-content" id="noiseGateContent">
+                        <div class="control-grid">
+                            <div class="control-item">
+                                <label>Threshold: <span id="noiseGateThresholdValue">-50 dB</span></label>
+                                <input type="range" id="noiseGateThreshold" min="-100" max="-10" value="-50" step="1">
+                                <small style="color: var(--text-secondary);">Nivel mínimo para pasar señal</small>
+                            </div>
+                            <div class="control-item">
+                                <label>Ataque: <span id="noiseGateAttackValue">1 ms</span></label>
+                                <input type="range" id="noiseGateAttack" min="0.001" max="0.1" value="0.001"
+                                    step="0.001">
+                                <small style="color: var(--text-secondary);">Tiempo de apertura</small>
+                            </div>
+                            <div class="control-item">
+                                <label>Release: <span id="noiseGateReleaseValue">100 ms</span></label>
+                                <input type="range" id="noiseGateRelease" min="0.01" max="1" value="0.1" step="0.01">
+                                <small style="color: var(--text-secondary);">Tiempo de cierre</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Ecualizador -->
                 <div class="plugin-section">
                     <div class="plugin-header">
@@ -1234,33 +1281,6 @@
                             <div class="control-item">
                                 <label>Release: <span id="compReleaseValue">250 ms</span></label>
                                 <input type="range" id="compRelease" min="0" max="1" value="0.25" step="0.01">
-                            </div>
-                            <div class="control-item">
-                                <label>Makeup Gain: <span id="compGainValue">0 dB</span></label>
-                                <input type="range" id="compGain" min="0" max="24" value="0" step="0.5">
-                                <small style="color: var(--text-secondary);">Ganancia de compensación</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Limitador -->
-                <div class="plugin-section">
-                    <div class="plugin-header">
-                        <div style="display: flex; align-items: center; gap: 12px;">
-                            <h3>🔒 Limitador</h3>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="limiterToggle">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="plugin-content" id="limiterContent">
-                        <div class="control-grid">
-                            <div class="control-item">
-                                <label>Ceiling: <span id="limiterCeilingValue">-0.1 dB</span></label>
-                                <input type="range" id="limiterCeiling" min="-10" max="0" value="-0.1" step="0.1">
-                                <small style="color: var(--text-secondary);">Nivel máximo de salida</small>
                             </div>
                         </div>
                     </div>

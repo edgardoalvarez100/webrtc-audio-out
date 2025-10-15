@@ -63,15 +63,26 @@
   let splitterNode = null;
   let volumeterAnimationId = null;
 
+  // Para analizador de espectro (RTA)
+  let spectrumAnalyserNode = null;
+  let spectrumCanvas = null;
+  let spectrumCtx = null;
+  let spectrumAnimationId = null;
+
   // Para complementos de audio
   let eqNodes = []; // Array de 10 filtros para ecualizador
   let compressorNode = null;
-  let compressorGainNode = null; // Ganancia de compensación del compresor
-  let limiterNode = null;
+  let compressorOutputGain = null; // Ganancia de salida para compensar aumento del compresor
   let delayNode = null;
   let delayFeedback = null;
   let delayWetGain = null;
   let delayDryGain = null;
+  let noiseGateNode = null; // GainNode para noise gate
+  let noiseGateAnalyser = null; // Analyser para detectar nivel de señal
+  let noiseGateThreshold = -50; // Threshold en dB
+  let noiseGateAttack = 0.001; // Tiempo de apertura en segundos
+  let noiseGateRelease = 0.1; // Tiempo de cierre en segundos
+  let noiseGateProcessorId = null; // ID del interval para procesamiento
 
   // Para indicador de compresión
   let compressionIndicator = null;
@@ -575,6 +586,234 @@
     volumeterValueRight.style.color = "#2ecc71";
   }
 
+  // ========== ANALIZADOR DE ESPECTRO (RTA) ==========
+
+  function generateFrequencyLabels(bufferLength) {
+    const labelsContainer = document.getElementById("spectrumLabels");
+    if (!labelsContainer) return;
+
+    // Limpiar etiquetas anteriores
+    labelsContainer.innerHTML = "";
+
+    // Usar posicionamiento absoluto para colocar etiquetas en posiciones logarítmicas
+    labelsContainer.style.position = "relative";
+    labelsContainer.style.display = "block";
+    labelsContainer.style.height = "20px";
+    labelsContainer.style.padding = "0";
+
+    // Frecuencias logarítmicas clave (20 Hz - 20 kHz)
+    const frequencies = [20, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 20000];
+    const freqLabels = [
+      "20",
+      "50",
+      "100",
+      "250",
+      "500",
+      "1k",
+      "2.5k",
+      "5k",
+      "10k",
+      "20k",
+    ];
+
+    const sampleRate = audioCtx.sampleRate;
+    const nyquist = sampleRate / 2;
+    const numBars = 64;
+
+    // Calcular posición de cada etiqueta según la escala logarítmica
+    const minFreq = 20;
+    const maxFreq = nyquist;
+    const logMin = Math.log10(minFreq);
+    const logMax = Math.log10(maxFreq);
+    const logRange = logMax - logMin;
+
+    frequencies.forEach((freq, idx) => {
+      // Calcular posición logarítmica de esta frecuencia
+      const logFreq = Math.log10(freq);
+      const position = (logFreq - logMin) / logRange;
+      const positionPercent = position * 100;
+
+      // Crear elemento de etiqueta
+      const labelElement = document.createElement("span");
+      labelElement.textContent = freqLabels[idx];
+      labelElement.style.position = "absolute";
+      labelElement.style.left = positionPercent + "%";
+      labelElement.style.transform = "translateX(-50%)";
+      labelElement.style.fontSize = "9px";
+      labelElement.style.color = "var(--text-secondary)";
+      labelElement.style.whiteSpace = "nowrap";
+      labelsContainer.appendChild(labelElement);
+    });
+
+    debugLog(
+      "Etiquetas de frecuencia generadas con posicionamiento logarítmico:",
+      frequencies.length
+    );
+  }
+
+  function startSpectrumAnalyzer() {
+    if (spectrumAnimationId || !gainNode) {
+      debugLog("Spectrum analyzer ya iniciado o gainNode no disponible");
+      return;
+    }
+
+    // Obtener referencias al canvas
+    spectrumCanvas = document.getElementById("spectrumAnalyzer");
+    if (!spectrumCanvas) {
+      debugWarn("Canvas de spectrum analyzer no encontrado");
+      return;
+    }
+    spectrumCtx = spectrumCanvas.getContext("2d");
+
+    // Crear analyser node si no existe
+    if (!spectrumAnalyserNode) {
+      spectrumAnalyserNode = audioCtx.createAnalyser();
+      spectrumAnalyserNode.fftSize = 2048; // Tamaño FFT (mayor = más resolución)
+      spectrumAnalyserNode.smoothingTimeConstant = 0.8; // Suavizado
+
+      // Conectar directamente desde gainNode
+      gainNode.connect(spectrumAnalyserNode);
+      // No conectar la salida del analyser a nada (solo para análisis)
+
+      debugLog(
+        "Spectrum analyzer node creado - FFT:",
+        spectrumAnalyserNode.fftSize
+      );
+    }
+
+    const bufferLength = spectrumAnalyserNode.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    debugLog("Spectrum analyzer iniciado - Buffer length:", bufferLength);
+
+    function drawSpectrum() {
+      spectrumAnimationId = requestAnimationFrame(drawSpectrum);
+
+      // Obtener datos de frecuencia
+      spectrumAnalyserNode.getByteFrequencyData(dataArray);
+
+      const width = spectrumCanvas.width;
+      const height = spectrumCanvas.height;
+
+      // Limpiar canvas
+      spectrumCtx.fillStyle = "#161b22";
+      spectrumCtx.fillRect(0, 0, width, height);
+
+      // Configuración de barras con distribución logarítmica
+      const numBars = 64;
+      const barWidth = width / numBars;
+      const sampleRate = audioCtx.sampleRate;
+      const nyquist = sampleRate / 2;
+
+      // Dibujar barras con escala logarítmica
+      for (let i = 0; i < numBars; i++) {
+        // Calcular rango de frecuencias logarítmicas para esta barra
+        // De 20 Hz a Nyquist (típicamente 24 kHz)
+        const minFreq = 20;
+        const maxFreq = nyquist;
+
+        // Interpolación logarítmica
+        const logMin = Math.log10(minFreq);
+        const logMax = Math.log10(maxFreq);
+        const logRange = logMax - logMin;
+
+        const freqStart = Math.pow(10, logMin + (i / numBars) * logRange);
+        const freqEnd = Math.pow(10, logMin + ((i + 1) / numBars) * logRange);
+
+        // Convertir frecuencias a índices de bins
+        const binStart = Math.floor((freqStart / nyquist) * bufferLength);
+        const binEnd = Math.floor((freqEnd / nyquist) * bufferLength);
+        const binCount = Math.max(1, binEnd - binStart);
+
+        // Promediar los bins en este rango de frecuencias
+        let sum = 0;
+        for (let j = binStart; j < binEnd && j < bufferLength; j++) {
+          sum += dataArray[j];
+        }
+        const average = sum / binCount;
+
+        // Calcular altura de la barra (0-255 -> 0-height)
+        const barHeight = (average / 255) * height;
+
+        // Color gradient basado en intensidad
+        let color;
+        if (average > 200) {
+          color = "#e74c3c"; // Rojo para altos niveles
+        } else if (average > 150) {
+          color = "#f39c12"; // Naranja
+        } else if (average > 100) {
+          color = "#f1c40f"; // Amarillo
+        } else {
+          color = "#2ecc71"; // Verde para bajos niveles
+        }
+
+        // Dibujar barra
+        spectrumCtx.fillStyle = color;
+        const x = i * barWidth;
+        const y = height - barHeight;
+        spectrumCtx.fillRect(x, y, barWidth - 1, barHeight);
+
+        // Agregar efecto de brillo en la parte superior
+        const gradient = spectrumCtx.createLinearGradient(
+          x,
+          y,
+          x,
+          y + barHeight
+        );
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(1, color + "80"); // Semi-transparente
+        spectrumCtx.fillStyle = gradient;
+        spectrumCtx.fillRect(x, y, barWidth - 1, barHeight);
+      }
+
+      // Dibujar líneas de referencia con etiquetas de nivel
+      spectrumCtx.strokeStyle = "#30363d";
+      spectrumCtx.lineWidth = 1;
+      spectrumCtx.fillStyle = "#8b949e";
+      spectrumCtx.font =
+        "9px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      spectrumCtx.textAlign = "left";
+      spectrumCtx.textBaseline = "middle";
+
+      // 5 niveles de referencia (intensidad relativa, no dBFS)
+      // Los valores van de 0% (silencio) a 100% (máxima intensidad FFT)
+      const intensityLabels = ["100%", "80%", "60%", "40%", "20%"];
+
+      for (let i = 0; i < 5; i++) {
+        const y = (height / 5) * i;
+
+        // Dibujar línea horizontal
+        spectrumCtx.beginPath();
+        spectrumCtx.moveTo(0, y);
+        spectrumCtx.lineTo(width, y);
+        spectrumCtx.stroke();
+
+        // Dibujar etiqueta de intensidad
+        spectrumCtx.fillText(intensityLabels[i], 4, y + 10);
+      }
+    }
+
+    // Generar etiquetas de frecuencia debajo del canvas (solo una vez)
+    generateFrequencyLabels(bufferLength);
+
+    drawSpectrum();
+  }
+
+  function stopSpectrumAnalyzer() {
+    if (spectrumAnimationId) {
+      cancelAnimationFrame(spectrumAnimationId);
+      spectrumAnimationId = null;
+
+      // Limpiar canvas
+      if (spectrumCanvas && spectrumCtx) {
+        spectrumCtx.fillStyle = "#161b22";
+        spectrumCtx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+      }
+
+      debugLog("Spectrum analyzer detenido");
+    }
+  }
+
   // Función para actualizar el indicador de compresión
   function updateCompressionIndicator() {
     // Obtener referencias a los elementos (solo una vez)
@@ -734,17 +973,9 @@
     compressorNode.attack.value = 0.003;
     compressorNode.release.value = 0.25;
 
-    // GainNode para makeup gain del compresor
-    compressorGainNode = audioCtx.createGain();
-    compressorGainNode.gain.value = 1.0; // 0 dB (sin ganancia adicional)
-
-    // Inicializar Limitador (otro compresor con parámetros extremos)
-    limiterNode = audioCtx.createDynamicsCompressor();
-    limiterNode.threshold.value = -0.1;
-    limiterNode.knee.value = 0;
-    limiterNode.ratio.value = 20;
-    limiterNode.attack.value = 0.001;
-    limiterNode.release.value = 0.01;
+    // GainNode para compensar el aumento automático del compresor
+    compressorOutputGain = audioCtx.createGain();
+    compressorOutputGain.gain.value = 0.5; // Reduce a la mitad para compensar
 
     // Inicializar Delay/Reverb
     delayNode = audioCtx.createDelay(2.0);
@@ -764,7 +995,63 @@
     delayFeedback.connect(delayNode);
     delayNode.connect(delayWetGain);
 
-    debugLog("✅ Complementos de audio inicializados");
+    // Inicializar Noise Gate real (con GainNode y Analyser)
+    noiseGateNode = audioCtx.createGain();
+    noiseGateNode.gain.value = 1; // Inicialmente abierto
+
+    noiseGateAnalyser = audioCtx.createAnalyser();
+    noiseGateAnalyser.fftSize = 2048;
+    noiseGateAnalyser.smoothingTimeConstant = 0.8;
+
+    debugLog(
+      "✅ Complementos de audio inicializados (incluyendo Noise Gate real)"
+    );
+  }
+
+  // Procesar Noise Gate en tiempo real
+  function processNoiseGate() {
+    if (!noiseGateAnalyser || !noiseGateNode || !audioCtx) return;
+
+    const bufferLength = noiseGateAnalyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    noiseGateAnalyser.getByteTimeDomainData(dataArray);
+
+    // Calcular RMS (nivel de señal)
+    let sum = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      const normalized = (dataArray[i] - 128) / 128;
+      sum += normalized * normalized;
+    }
+    const rms = Math.sqrt(sum / bufferLength);
+    const dbLevel = 20 * Math.log10(rms + 0.0001); // Evitar log(0)
+
+    // Determinar si la puerta debe estar abierta o cerrada
+    const currentGain = noiseGateNode.gain.value;
+    let targetGain;
+
+    if (dbLevel > noiseGateThreshold) {
+      // Señal por encima del umbral - abrir puerta
+      targetGain = 1;
+    } else {
+      // Señal por debajo del umbral - cerrar puerta (silencio total)
+      targetGain = 0;
+    }
+
+    // Aplicar transición suave (attack/release)
+    const now = audioCtx.currentTime;
+    if (targetGain > currentGain) {
+      // Abrir - usar attack time
+      noiseGateNode.gain.linearRampToValueAtTime(
+        targetGain,
+        now + noiseGateAttack
+      );
+    } else if (targetGain < currentGain) {
+      // Cerrar - usar release time
+      noiseGateNode.gain.linearRampToValueAtTime(
+        targetGain,
+        now + noiseGateRelease
+      );
+    }
   }
 
   function reconnectAudioGraph() {
@@ -781,17 +1068,13 @@
       try {
         gainNode.disconnect();
       } catch (e) {}
-      if (limiterNode)
-        try {
-          limiterNode.disconnect();
-        } catch (e) {}
       if (compressorNode)
         try {
           compressorNode.disconnect();
         } catch (e) {}
-      if (compressorGainNode)
+      if (compressorOutputGain)
         try {
-          compressorGainNode.disconnect();
+          compressorOutputGain.disconnect();
         } catch (e) {}
       eqNodes.forEach((node) => {
         try {
@@ -810,9 +1093,44 @@
         try {
           delayWetGain.disconnect();
         } catch (e) {}
+      if (noiseGateNode)
+        try {
+          noiseGateNode.disconnect();
+        } catch (e) {}
+      if (noiseGateAnalyser)
+        try {
+          noiseGateAnalyser.disconnect();
+        } catch (e) {}
+
+      // Detener procesamiento anterior del Noise Gate
+      if (noiseGateProcessorId) {
+        clearInterval(noiseGateProcessorId);
+        noiseGateProcessorId = null;
+      }
 
       let currentNode = sourceNode;
       debugLog("🔗 Iniciando reconexión desde sourceNode");
+
+      // Conectar Noise Gate si está habilitado (PRIMERO en la cadena)
+      const noiseGateToggleEl = document.getElementById("noiseGateToggle");
+      const noiseGateEnabled = noiseGateToggleEl
+        ? noiseGateToggleEl.checked
+        : false;
+      if (noiseGateEnabled && noiseGateNode && noiseGateAnalyser) {
+        // Conectar analyser para monitorear la señal
+        currentNode.connect(noiseGateAnalyser);
+        // Conectar la señal a través del GainNode (noise gate)
+        currentNode.connect(noiseGateNode);
+        currentNode = noiseGateNode;
+
+        // Iniciar procesamiento en tiempo real
+        noiseGateProcessorId = setInterval(processNoiseGate, 10); // Cada 10ms
+
+        debugLog("✅ Noise Gate conectado (primero en la cadena)");
+      } else if (!noiseGateEnabled && noiseGateNode) {
+        // Si está deshabilitado, asegurar que la ganancia esté en 1
+        noiseGateNode.gain.value = 1;
+      }
 
       // Conectar EQ si está habilitado
       const eqToggleEl = document.getElementById("eqToggle");
@@ -829,12 +1147,11 @@
       // Conectar Compresor si está habilitado
       const compToggleEl = document.getElementById("compressorToggle");
       const compEnabled = compToggleEl ? compToggleEl.checked : false;
-      if (compEnabled && compressorNode && compressorGainNode) {
-        // Cadena: currentNode → compressor → compressorGain → siguiente nodo
+      if (compEnabled && compressorNode && compressorOutputGain) {
         currentNode.connect(compressorNode);
-        compressorNode.connect(compressorGainNode);
-        currentNode = compressorGainNode;
-        debugLog("✅ Compresor con makeup gain conectado");
+        compressorNode.connect(compressorOutputGain);
+        currentNode = compressorOutputGain;
+        debugLog("✅ Compresor conectado con compensación de ganancia");
       }
 
       // Conectar Delay/Reverb si está habilitado
@@ -857,20 +1174,8 @@
         debugLog("🔗 Ruta directa a gainNode (sin delay)");
       }
 
-      // Conectar Limitador si está habilitado
-      const limiterToggleEl = document.getElementById("limiterToggle");
-      const limiterEnabled = limiterToggleEl ? limiterToggleEl.checked : false;
-
-      let finalNode = gainNode;
-
-      if (limiterEnabled && limiterNode) {
-        gainNode.connect(limiterNode);
-        finalNode = limiterNode;
-        debugLog("✅ Limitador conectado");
-      }
-
-      // Conectar a audioCtx.destination (salida directa del sistema)
-      finalNode.connect(audioCtx.destination);
+      // Conectar gainNode directamente a la salida
+      gainNode.connect(audioCtx.destination);
       debugLog(
         "🔗 Conectado a audioCtx.destination (salida directa con complementos)"
       );
@@ -890,6 +1195,22 @@
           debugLog("🔗 Volumeter reconectado (tap desde gainNode)");
         } catch (e) {
           debugError("Error reconectando volumeter:", e);
+        }
+      }
+
+      // Reconectar analizador de espectro (RTA)
+      if (spectrumAnalyserNode) {
+        try {
+          // Desconectar primero para evitar errores
+          try {
+            spectrumAnalyserNode.disconnect();
+          } catch (e) {}
+
+          // Reconectar directamente: gainNode → analyser
+          gainNode.connect(spectrumAnalyserNode);
+          debugLog("🔗 RTA reconectado (tap desde gainNode)");
+        } catch (e) {
+          debugError("Error reconectando RTA:", e);
         }
       }
 
@@ -913,10 +1234,10 @@
       const config = {
         // Estados de activación
         eqEnabled: document.getElementById("eqToggle")?.checked || false,
+        noiseGateEnabled:
+          document.getElementById("noiseGateToggle")?.checked || false,
         compressorEnabled:
           document.getElementById("compressorToggle")?.checked || false,
-        limiterEnabled:
-          document.getElementById("limiterToggle")?.checked || false,
         reverbEnabled:
           document.getElementById("reverbToggle")?.checked || false,
 
@@ -934,6 +1255,19 @@
           band16k: parseFloat(document.getElementById("eq16k")?.value || 0),
         },
 
+        // Noise Gate
+        noiseGate: {
+          threshold: parseFloat(
+            document.getElementById("noiseGateThreshold")?.value || -50
+          ),
+          attack: parseFloat(
+            document.getElementById("noiseGateAttack")?.value || 0.001
+          ),
+          release: parseFloat(
+            document.getElementById("noiseGateRelease")?.value || 0.1
+          ),
+        },
+
         // Compresor
         compressor: {
           threshold: parseFloat(
@@ -946,14 +1280,6 @@
           ),
           release: parseFloat(
             document.getElementById("compRelease")?.value || 0.25
-          ),
-          gain: parseFloat(document.getElementById("compGain")?.value || 0),
-        },
-
-        // Limitador
-        limiter: {
-          ceiling: parseFloat(
-            document.getElementById("limiterCeiling")?.value || -0.1
           ),
         },
 
@@ -990,13 +1316,13 @@
       if (document.getElementById("eqToggle")) {
         document.getElementById("eqToggle").checked = config.eqEnabled || false;
       }
+      if (document.getElementById("noiseGateToggle")) {
+        document.getElementById("noiseGateToggle").checked =
+          config.noiseGateEnabled || false;
+      }
       if (document.getElementById("compressorToggle")) {
         document.getElementById("compressorToggle").checked =
           config.compressorEnabled || false;
-      }
-      if (document.getElementById("limiterToggle")) {
-        document.getElementById("limiterToggle").checked =
-          config.limiterEnabled || false;
       }
       if (document.getElementById("reverbToggle")) {
         document.getElementById("reverbToggle").checked =
@@ -1048,6 +1374,34 @@
         });
       }
 
+      // Cargar Noise Gate
+      if (config.noiseGate) {
+        if (document.getElementById("noiseGateThreshold")) {
+          document.getElementById("noiseGateThreshold").value =
+            config.noiseGate.threshold;
+          document.getElementById(
+            "noiseGateThresholdValue"
+          ).textContent = `${config.noiseGate.threshold} dB`;
+          noiseGateThreshold = config.noiseGate.threshold;
+        }
+        if (document.getElementById("noiseGateAttack")) {
+          document.getElementById("noiseGateAttack").value =
+            config.noiseGate.attack;
+          document.getElementById("noiseGateAttackValue").textContent = `${(
+            config.noiseGate.attack * 1000
+          ).toFixed(0)} ms`;
+          noiseGateAttack = config.noiseGate.attack;
+        }
+        if (document.getElementById("noiseGateRelease")) {
+          document.getElementById("noiseGateRelease").value =
+            config.noiseGate.release;
+          document.getElementById("noiseGateReleaseValue").textContent = `${(
+            config.noiseGate.release * 1000
+          ).toFixed(0)} ms`;
+          noiseGateRelease = config.noiseGate.release;
+        }
+      }
+
       // Cargar Compresor
       if (config.compressor) {
         if (document.getElementById("compThreshold")) {
@@ -1093,32 +1447,6 @@
           if (compressorNode)
             compressorNode.release.value = config.compressor.release;
         }
-        if (
-          document.getElementById("compGain") &&
-          config.compressor.gain !== undefined
-        ) {
-          document.getElementById("compGain").value = config.compressor.gain;
-          document.getElementById("compGainValue").textContent = `${
-            config.compressor.gain >= 0 ? "+" : ""
-          }${config.compressor.gain.toFixed(1)} dB`;
-          if (compressorGainNode) {
-            // Convertir dB a ganancia lineal
-            compressorGainNode.gain.value = Math.pow(
-              10,
-              config.compressor.gain / 20
-            );
-          }
-        }
-      }
-
-      // Cargar Limitador
-      if (config.limiter && document.getElementById("limiterCeiling")) {
-        document.getElementById("limiterCeiling").value =
-          config.limiter.ceiling;
-        document.getElementById(
-          "limiterCeilingValue"
-        ).textContent = `${config.limiter.ceiling.toFixed(1)} dB`;
-        if (limiterNode) limiterNode.threshold.value = config.limiter.ceiling;
       }
 
       // Cargar Delay/Reverb
@@ -1399,6 +1727,9 @@
       // Iniciar visualización del volumeter
       startVolumeter();
 
+      // Iniciar analizador de espectro
+      startSpectrumAnalyzer();
+
       debugLog(
         `AudioContext configurado - Volumen: ${VOLUME}%, State: ${audioCtx.state}`
       );
@@ -1447,6 +1778,7 @@
   }
 
   function updateConnectButton(isConnected) {
+    btnConnect.disabled = false; // Asegurar que el botón esté habilitado
     if (isConnected) {
       btnConnect.textContent = "⏹ Desconectar";
       btnConnect.className = "btn-danger";
@@ -1510,6 +1842,8 @@
       outSel.selectedOptions[0]?.textContent ||
       (deviceId === "default" ? "Default (Sistema)" : "device");
 
+    debugLog(`🔊 Intentando cambiar dispositivo a: ${label} (${deviceId})`);
+
     // Intentar cambiar el sinkId del AudioContext (modo complementos activos)
     if (audioCtx && audioCtx.setSinkId) {
       try {
@@ -1521,6 +1855,7 @@
         await window.webrtcCfg.set("DEVICE_LABEL", label);
 
         devEl.textContent = label;
+        debugLog(`✅ Dispositivo cambiado exitosamente: ${label}`);
         return true;
       } catch (e) {
         debugError("❌ Error al aplicar AudioContext.setSinkId:", e);
@@ -1539,6 +1874,7 @@
         await window.webrtcCfg.set("DEVICE_LABEL", label);
 
         devEl.textContent = label;
+        debugLog(`✅ Dispositivo cambiado exitosamente: ${label}`);
         return true;
       } catch (e) {
         debugError("❌ Error al aplicar audioEl.setSinkId:", e);
@@ -1806,6 +2142,9 @@
     // Detener volumeter
     stopVolumeter();
 
+    // Detener analizador de espectro
+    stopSpectrumAnalyzer();
+
     setStatus("desconectado", "muted");
     updateConnectButton(false);
   } // ---- Test tone (440 Hz) para verificar la tarjeta de salida ----
@@ -1814,31 +2153,53 @@
 
     prevStream = audioEl.srcObject; // guarda lo que haya
 
-    // Crear AudioContext con latencia baja
-    const contextOptions = {
-      latencyHint: "interactive",
-      sampleRate: 48000,
-    };
+    // Si ya existe audioCtx principal, usar ese
+    if (audioCtx && gainNode) {
+      // Crear oscilador en el contexto principal
+      testOsc = audioCtx.createOscillator();
+      testGain = audioCtx.createGain();
 
-    testCtx = new (window.AudioContext || window.webkitAudioContext)(
-      contextOptions
-    );
+      // Ajustar volumen del tono
+      testGain.gain.value = 0.05; // volumen bajito
 
-    debugLog(`AudioContext creado - Sample rate: ${testCtx.sampleRate} Hz`);
+      testOsc.type = "sine";
+      testOsc.frequency.value = 440;
 
-    testOsc = testCtx.createOscillator();
-    testGain = testCtx.createGain();
-    // Ajustar volumen del tono según el volumen configurado
-    testGain.gain.value = (0.05 * VOLUME) / 100; // volumen bajito multiplicado por el porcentaje
+      // Conectar a la cadena principal: osc → testGain → gainNode (que ya tiene todos los efectos)
+      testOsc.connect(testGain);
+      testGain.connect(gainNode);
+      testOsc.start();
 
-    const dest = testCtx.createMediaStreamDestination();
-    testOsc.type = "sine";
-    testOsc.frequency.value = 440;
-    testOsc.connect(testGain);
-    testGain.connect(dest);
-    testOsc.start();
+      testCtx = audioCtx; // Marcar que el tono está activo usando el contexto existente
 
-    audioEl.srcObject = dest.stream;
+      debugLog("Tono de prueba conectado al AudioContext principal");
+    } else {
+      // Crear AudioContext temporal si no existe uno principal
+      const contextOptions = {
+        latencyHint: "interactive",
+        sampleRate: 48000,
+      };
+
+      testCtx = new (window.AudioContext || window.webkitAudioContext)(
+        contextOptions
+      );
+
+      debugLog(`AudioContext creado - Sample rate: ${testCtx.sampleRate} Hz`);
+
+      testOsc = testCtx.createOscillator();
+      testGain = testCtx.createGain();
+      testGain.gain.value = (0.05 * VOLUME) / 100;
+
+      const dest = testCtx.createMediaStreamDestination();
+      testOsc.type = "sine";
+      testOsc.frequency.value = 440;
+      testOsc.connect(testGain);
+      testGain.connect(dest);
+      testOsc.start();
+
+      audioEl.srcObject = dest.stream;
+    }
+
     setStatus(`🔊 tono de prueba (440 Hz) - Vol: ${VOLUME}%`, "ok");
     btnTest.textContent = "⏹ Detener tono";
   }
@@ -1848,10 +2209,16 @@
 
     try {
       testOsc?.stop();
+      testOsc?.disconnect();
+      testGain?.disconnect();
     } catch {}
-    try {
-      await testCtx.close();
-    } catch {}
+
+    // Solo cerrar el contexto si es temporal (no el principal)
+    if (testCtx !== audioCtx) {
+      try {
+        await testCtx.close();
+      } catch {}
+    }
 
     testCtx = testOsc = testGain = null;
     audioEl.srcObject = prevStream || null;
@@ -2084,7 +2451,18 @@
 
   // UI events
   outSel.addEventListener("change", async () => {
-    await applySink(outSel.value);
+    const deviceLabel = outSel.selectedOptions[0]?.textContent || "Dispositivo";
+    setStatus(`cambiando a: ${deviceLabel}...`, "muted");
+    const success = await applySink(outSel.value);
+    if (success) {
+      setStatus(`✓ dispositivo cambiado: ${deviceLabel}`, "ok");
+      // Limpiar mensaje después de 2 segundos
+      setTimeout(() => {
+        if (pc) {
+          setStatus("reproduciendo ✓", "ok");
+        }
+      }, 2000);
+    }
   });
 
   btnRefresh.addEventListener("click", async () => {
@@ -2409,6 +2787,41 @@
     savePluginsConfig();
   });
 
+  // Noise Gate
+  document.getElementById("noiseGateToggle").addEventListener("change", () => {
+    reconnectAudioGraph();
+    savePluginsConfig();
+  });
+
+  document
+    .getElementById("noiseGateThreshold")
+    .addEventListener("input", (e) => {
+      const value = parseFloat(e.target.value);
+      document.getElementById(
+        "noiseGateThresholdValue"
+      ).textContent = `${value} dB`;
+      noiseGateThreshold = value;
+      savePluginsConfig();
+    });
+
+  document.getElementById("noiseGateAttack").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("noiseGateAttackValue").textContent = `${(
+      value * 1000
+    ).toFixed(0)} ms`;
+    noiseGateAttack = value;
+    savePluginsConfig();
+  });
+
+  document.getElementById("noiseGateRelease").addEventListener("input", (e) => {
+    const value = parseFloat(e.target.value);
+    document.getElementById("noiseGateReleaseValue").textContent = `${(
+      value * 1000
+    ).toFixed(0)} ms`;
+    noiseGateRelease = value;
+    savePluginsConfig();
+  });
+
   // Compresor
   document.getElementById("compressorToggle").addEventListener("change", () => {
     reconnectAudioGraph();
@@ -2451,33 +2864,6 @@
       value * 1000
     ).toFixed(0)} ms`;
     if (compressorNode) compressorNode.release.value = value;
-    savePluginsConfig();
-  });
-
-  document.getElementById("compGain").addEventListener("input", (e) => {
-    const value = parseFloat(e.target.value);
-    document.getElementById("compGainValue").textContent = `${
-      value >= 0 ? "+" : ""
-    }${value.toFixed(1)} dB`;
-    if (compressorGainNode) {
-      // Convertir dB a ganancia lineal: gain = 10^(dB/20)
-      compressorGainNode.gain.value = Math.pow(10, value / 20);
-    }
-    savePluginsConfig();
-  });
-
-  // Limitador
-  document.getElementById("limiterToggle").addEventListener("change", () => {
-    reconnectAudioGraph();
-    savePluginsConfig();
-  });
-
-  document.getElementById("limiterCeiling").addEventListener("input", (e) => {
-    const value = parseFloat(e.target.value);
-    document.getElementById(
-      "limiterCeilingValue"
-    ).textContent = `${value.toFixed(1)} dB`;
-    if (limiterNode) limiterNode.threshold.value = value;
     savePluginsConfig();
   });
 
@@ -2640,6 +3026,11 @@
 
     // Auto-conectar si está habilitado en configuración
     if (AUTO_CONNECT) {
+      // Actualizar botón a estado "conectando"
+      btnConnect.disabled = true;
+      btnConnect.textContent = "⏳ Conectando...";
+      setStatus("conectando automáticamente...", "muted");
+
       setTimeout(async () => {
         try {
           debugLog("🔌 Auto-conectando...");
@@ -2647,6 +3038,8 @@
         } catch (e) {
           console.error("Error en conexión automática:", e);
           setStatus("error al auto-conectar: " + e.message, "bad");
+          // Restaurar botón en caso de error
+          updateConnectButton(false);
         }
       }, 500);
     }
