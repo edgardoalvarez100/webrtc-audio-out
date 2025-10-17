@@ -848,6 +848,31 @@
         .plugin-section {
             overflow: hidden;
         }
+
+        /* Animaciones para notificaciones */
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
     </style>
 </head>
 
@@ -973,7 +998,7 @@
         <!-- Footer con versión -->
         <div
             style="text-align: center; padding: 16px 12px; margin-top: 8px; border-top: 1px solid var(--border-primary); color: var(--text-secondary); font-size: 12px;">
-            <span>WebRTC Audio Out v1.0.2</span>
+            <span>WebRTC Audio Out v1.0.5</span>
             <span style="margin: 0 8px;">•</span>
             <span id="appYear">2025</span>
         </div>
@@ -1184,6 +1209,33 @@
                         </div>
                     </div>
                     <div class="plugin-content" id="eqContent">
+                        <!-- Selector de Presets -->
+                        <div
+                            style="margin-bottom: 20px; padding: 16px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-primary);">
+                            <label
+                                style="display: block; font-size: 13px; font-weight: 600; color: var(--accent-blue); margin-bottom: 12px;">
+                                Presets del Ecualizador
+                            </label>
+                            <div style="display: flex; gap: 8px;">
+                                <select id="eqPresetSelect"
+                                    style="flex: 1; padding: 8px 12px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 6px; font-size: 12px; cursor: pointer;">
+                                    <option value="flat">Plano (Flat)</option>
+                                    <option value="rock">Rock</option>
+                                    <option value="pop">Pop</option>
+                                    <option value="jazz">Jazz</option>
+                                    <option value="classical">Clásica</option>
+                                    <option value="electronic">Electrónica</option>
+                                    <option value="vocal">Voz / Podcast</option>
+                                    <option value="bass">Bass Boost</option>
+                                    <option value="treble">Treble Boost</option>
+                                </select>
+                                <button id="eqApplyPreset" class="btn-primary"
+                                    style="padding: 8px 16px; font-size: 12px; white-space: nowrap;">
+                                    Aplicar
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="eq-container">
                             <div class="eq-band">
                                 <label>32 Hz</label>

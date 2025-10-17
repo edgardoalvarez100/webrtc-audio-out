@@ -84,6 +84,21 @@
   let noiseGateRelease = 0.1; // Tiempo de cierre en segundos
   let noiseGateProcessorId = null; // ID del interval para procesamiento
 
+  // Presets del ecualizador
+  const EQ_PRESETS = {
+    flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    rock: [5, 4, 2, -1, -2, 1, 3, 5, 6, 5],
+    pop: [2, 1, 0, 2, 4, 4, 2, 0, -1, -2],
+    jazz: [4, 3, 1, 2, -1, -1, 0, 1, 3, 4],
+    classical: [4, 3, 2, 0, 0, 0, -1, 2, 3, 4],
+    electronic: [6, 5, 2, 0, -2, 2, 1, 3, 5, 6],
+    vocal: [-2, -1, 1, 3, 4, 5, 4, 2, 0, -1],
+    bass: [8, 7, 5, 3, 0, -1, -2, -2, -1, 0],
+    treble: [0, -1, -2, -2, 0, 2, 4, 6, 8, 9],
+  };
+
+  let customPreset = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // Preset personalizado guardado
+
   // Para indicador de compresión
   let compressionIndicator = null;
   let compressionReductionText = null;
@@ -1243,6 +1258,7 @@
 
         // EQ (10 bandas)
         eq: {
+          preset: document.getElementById("eqPresetSelect")?.value || "flat",
           band32: parseFloat(document.getElementById("eq32")?.value || 0),
           band64: parseFloat(document.getElementById("eq64")?.value || 0),
           band125: parseFloat(document.getElementById("eq125")?.value || 0),
@@ -1331,6 +1347,11 @@
 
       // Cargar EQ
       if (config.eq) {
+        // Cargar preset seleccionado
+        if (config.eq.preset && document.getElementById("eqPresetSelect")) {
+          document.getElementById("eqPresetSelect").value = config.eq.preset;
+        }
+
         const eqIds = [
           "eq32",
           "eq64",
@@ -1485,6 +1506,168 @@
       debugError("Error cargando configuración de complementos:", e);
     }
   }
+
+  // ========== FUNCIONES PARA PRESETS DEL ECUALIZADOR ==========
+
+  // Aplicar un preset al ecualizador
+  function applyEQPreset(presetValues) {
+    const eqIds = [
+      "eq32",
+      "eq64",
+      "eq125",
+      "eq250",
+      "eq500",
+      "eq1k",
+      "eq2k",
+      "eq4k",
+      "eq8k",
+      "eq16k",
+    ];
+
+    eqIds.forEach((id, index) => {
+      const slider = document.getElementById(id);
+      const valueSpan = slider.nextElementSibling;
+      const value = presetValues[index];
+
+      slider.value = value;
+      valueSpan.textContent = `${value >= 0 ? "+" : ""}${value.toFixed(1)} dB`;
+
+      // Aplicar al nodo de audio
+      if (eqNodes[index]) {
+        eqNodes[index].gain.value = value;
+      }
+    });
+
+    savePluginsConfig();
+    debugLog(`✅ Preset aplicado:`, presetValues);
+  }
+
+  // Obtener valores actuales del ecualizador
+  function getCurrentEQValues() {
+    const eqIds = [
+      "eq32",
+      "eq64",
+      "eq125",
+      "eq250",
+      "eq500",
+      "eq1k",
+      "eq2k",
+      "eq4k",
+      "eq8k",
+      "eq16k",
+    ];
+
+    return eqIds.map((id) => {
+      const slider = document.getElementById(id);
+      return parseFloat(slider.value);
+    });
+  }
+
+  // Guardar preset personalizado
+  async function saveCustomEQPreset() {
+    try {
+      const currentValues = getCurrentEQValues();
+      customPreset = [...currentValues];
+
+      await window.webrtcCfg.set(
+        "customEQPreset",
+        JSON.stringify(customPreset)
+      );
+
+      debugLog("💾 Preset personalizado guardado:", customPreset);
+
+      // Mostrar notificación
+      showNotification(
+        "💾 Preset Guardado",
+        "Tu configuración personalizada ha sido guardada exitosamente",
+        "success"
+      );
+    } catch (e) {
+      debugError("Error guardando preset personalizado:", e);
+      showNotification(
+        "❌ Error",
+        "No se pudo guardar el preset personalizado",
+        "error"
+      );
+    }
+  }
+
+  // Cargar preset personalizado
+  async function loadCustomEQPreset() {
+    try {
+      const presetStr = await window.webrtcCfg.get("customEQPreset", null);
+
+      if (presetStr) {
+        customPreset = JSON.parse(presetStr);
+        applyEQPreset(customPreset);
+
+        debugLog("📂 Preset personalizado cargado:", customPreset);
+
+        showNotification(
+          "📂 Preset Cargado",
+          "Tu configuración personalizada ha sido restaurada",
+          "success"
+        );
+      } else {
+        showNotification(
+          "⚠️ Sin Preset",
+          "No hay ningún preset personalizado guardado",
+          "warning"
+        );
+      }
+    } catch (e) {
+      debugError("Error cargando preset personalizado:", e);
+      showNotification(
+        "❌ Error",
+        "No se pudo cargar el preset personalizado",
+        "error"
+      );
+    }
+  }
+
+  // Mostrar notificación temporal
+  function showNotification(title, message, type = "info") {
+    const colors = {
+      success: "#2ea043",
+      error: "#da3633",
+      warning: "#e3b341",
+      info: "#1f6feb",
+    };
+
+    const notification = document.createElement("div");
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10000;
+      background: ${colors[type] || colors.info};
+      color: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      font-family: 'Segoe UI', sans-serif;
+      max-width: 320px;
+      animation: slideIn 0.3s ease-out;
+    `;
+
+    notification.innerHTML = `
+      <div style="font-size: 14px; font-weight: bold; margin-bottom: 4px;">
+        ${title}
+      </div>
+      <div style="font-size: 12px; opacity: 0.95;">
+        ${message}
+      </div>
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      notification.style.animation = "slideOut 0.3s ease-in";
+      setTimeout(() => notification.remove(), 300);
+    }, 3000);
+  }
+
+  // ========== FIN FUNCIONES PRESETS ==========
 
   async function setupAudioProcessing(stream) {
     try {
@@ -2790,7 +2973,24 @@
         eqNodes[index].gain.value = 0;
       }
     });
+    // Resetear también el selector a "flat"
+    document.getElementById("eqPresetSelect").value = "flat";
     savePluginsConfig();
+  });
+
+  // Event Listeners para Presets del Ecualizador
+  document.getElementById("eqApplyPreset").addEventListener("click", () => {
+    const selectedPreset = document.getElementById("eqPresetSelect").value;
+
+    if (EQ_PRESETS[selectedPreset]) {
+      // Aplicar preset predefinido
+      applyEQPreset(EQ_PRESETS[selectedPreset]);
+      showNotification(
+        "Preset Aplicado",
+        `Preset "${selectedPreset.toUpperCase()}" aplicado correctamente`,
+        "success"
+      );
+    }
   });
 
   // Noise Gate
