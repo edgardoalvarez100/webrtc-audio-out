@@ -14,17 +14,45 @@ app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
+// === 🔓 PERMITIR MÚLTIPLES INSTANCIAS ===
+// Por defecto, Electron solo permite una instancia. Esto lo desactiva.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  // Si ya hay otra instancia, esta se cierra automáticamente
+  // Pero como queremos múltiples instancias, liberamos el lock
+  console.log(
+    "⚠️ Otra instancia detectada, pero permitiendo múltiples instancias..."
+  );
+}
+// Permitir múltiples instancias: no hacer quit si hay otra instancia
+app.releaseSingleInstanceLock();
+
 // =================================================
 
 // Configurar auto-updater
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
-// Usar configuración local (en la carpeta de la aplicación)
+// Usar configuración local (en la carpeta del ejecutable)
 // Esto permite múltiples instancias con configuraciones independientes
-const configManager = new ConfigManager(path.join(__dirname, "config.json"));
+// En desarrollo: usa __dirname (carpeta del proyecto)
+// En producción: usa process.resourcesPath o app.getAppPath()
+let configPath;
+if (app.isPackaged) {
+  // Producción: usar la carpeta donde está el ejecutable
+  // Para portable: usar process.execPath
+  // Para instalado: usar app.getAppPath() para que quede en resources/app
+  const appDir = path.dirname(process.execPath);
+  configPath = path.join(appDir, "config.json");
+} else {
+  // Desarrollo: usar la carpeta del proyecto
+  configPath = path.join(__dirname, "config.json");
+}
+
+const configManager = new ConfigManager(configPath);
 
 console.log("📁 Archivo de configuración:", configManager.getConfigPath());
+console.log("🔓 Múltiples instancias: ACTIVADO");
 
 // IPC handlers para get/set de configuración
 ipcMain.handle("config-get", (event, key, defVal = null) => {

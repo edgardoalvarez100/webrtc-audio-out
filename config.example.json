@@ -1,0 +1,11 @@
+{
+  "DEVICE_ID": "",
+  "DEVICE_LABEL": "",
+  "WHEP_URL": "https://example.com:1935/rtc/v1/whep/?app=live&stream=audiostream",
+  "fontSize": "medium",
+  "DEBUG_MODE": "false",
+  "AUTO_CONNECT": "false",
+  "VOLUME": "100",
+  "pluginsConfig": "{\"eqEnabled\":false,\"noiseGateEnabled\":false,\"compressorEnabled\":false,\"reverbEnabled\":false,\"eq\":{\"preset\":\"flat\",\"band32\":0,\"band64\":0,\"band125\":0,\"band250\":0,\"band500\":0,\"band1k\":0,\"band2k\":0,\"band4k\":0,\"band8k\":0,\"band16k\":0},\"noiseGate\":{\"threshold\":-50,\"attack\":0.001,\"release\":0.1},\"compressor\":{\"threshold\":-24,\"knee\":30,\"ratio\":12,\"attack\":0.003,\"release\":0.25},\"reverb\":{\"time\":0.5,\"feedback\":0.3,\"mix\":0}}",
+  "autostart": "false"
+}
