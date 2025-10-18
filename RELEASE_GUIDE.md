@@ -37,13 +37,50 @@ Esto generará:
 
 #### Opción B: Automática (requiere token)
 
-```bash
-# Configurar token de GitHub
-set GH_TOKEN=tu_github_token_aqui
+**Configuración inicial (solo una vez):**
 
-# Publicar automáticamente
+1. Crea/edita el archivo `.env` en la raíz del proyecto:
+
+   ```properties
+   GH_TOKEN=tu_github_token_aqui
+   ```
+
+2. Obtén tu token de GitHub:
+   - Ve a: https://github.com/settings/tokens/new
+   - Nombre: `webrtc-audio-out-releases`
+   - Expiration: 90 días o sin expiración
+   - Scopes: Marca `repo` (completo)
+   - Copia el token generado
+
+**Para publicar (métodos):**
+
+**Método 1: Script automatizado (Recomendado)**
+
+```bash
+# Windows CMD
+publish.bat
+
+# O PowerShell
+.\publish.ps1
+```
+
+**Método 2: Manual**
+
+```bash
+# CMD
+set GH_TOKEN=tu_token
+npm run publish
+
+# PowerShell
+$env:GH_TOKEN = "tu_token"
 npm run publish
 ```
+
+**⚠️ IMPORTANTE:**
+
+- El archivo `.env` está en `.gitignore` - NO lo subas al repositorio
+- Los scripts `publish.bat` y `publish.ps1` leen automáticamente el token de `.env`
+- Si usas el método manual, el token solo dura esa sesión de terminal
 
 ### 4. **Verificar actualización**
 
