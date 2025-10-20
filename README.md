@@ -62,12 +62,91 @@ Aplicación de Electron para reproducir audio desde un servidor WebRTC usando el
 
 ## 💾 Persistencia
 
-La aplicación guarda automáticamente:
+La aplicación guarda automáticamente toda tu configuración en un archivo central indexado por ubicación.
 
-- **URL WHEP**: Se guarda al cambiar el campo de texto
-- **Tarjeta de Audio**: Se guarda al seleccionar un dispositivo
-- **Volumen**: Se guarda automáticamente al ajustar el slider
-- **Configuración**: Persiste en `%APPDATA%/webrtc-audio-out/config.json`
+### 🗂️ Sistema de Configuración por Ubicación
+
+**Característica Única:** Cada copia del ejecutable en una carpeta diferente tiene su propia configuración independiente, pero todas se guardan en un solo archivo central.
+
+```
+C:\Audio\Radio1\webrtc-audio-out.exe → Configuración "Radio1"
+C:\Audio\Radio2\webrtc-audio-out.exe → Configuración "Radio2"
+D:\Backup\webrtc-audio-out.exe      → Configuración "Backup"
+```
+
+**Configuración guardada:**
+
+- URL WHEP Primaria y Failover
+- Estado de Failover (activado/desactivado)
+- Tarjeta de Audio seleccionada
+- Volumen (0-150%)
+- Presets de EQ y configuraciones personalizadas
+- Efectos de Audio (Compresor, Reverb, Delay, Noise Gate)
+- Preferencias de UI (Debug mode, auto-connect, tamaño de fuente)
+
+### 📁 Ubicación del Archivo Central
+
+**Archivo único con todas las configuraciones:**
+
+```
+Windows:
+C:\Users\TuUsuario\AppData\Roaming\webrtc-audio-out\config.json
+
+macOS:
+~/Library/Application Support/webrtc-audio-out/config.json
+
+Linux:
+~/.config/webrtc-audio-out/config.json
+```
+
+**Acceso rápido en Windows:**
+
+- Presiona `Windows + R`
+- Escribe: `%APPDATA%\webrtc-audio-out`
+- Verás el archivo `config.json`
+
+### 🔑 Cómo Funciona
+
+1. **La ubicación del ejecutable** determina qué configuración se usa
+2. **Un solo archivo** contiene todas las configuraciones indexadas
+3. **Copiar el ejecutable** a otra carpeta crea automáticamente una nueva configuración
+4. **Cada instancia** es completamente independiente
+
+**Ejemplo de estructura del archivo:**
+
+```json
+{
+  "c_audio_radio1": {
+    "WHEP_URL": "https://servidor.com/stream1",
+    "DEVICE_ID": "VAIO1",
+    "VOLUME": "100"
+  },
+  "c_audio_radio2": {
+    "WHEP_URL": "https://servidor.com/stream2",
+    "DEVICE_ID": "VAIO2",
+    "VOLUME": "120"
+  }
+}
+```
+
+### 🚀 Uso de Múltiples Instancias
+
+**Crear nuevas instancias:**
+
+1. Copia la carpeta del ejecutable a otra ubicación
+2. Ejecuta desde la nueva ubicación
+3. Configura independientemente
+4. ¡Listo! Cada instancia mantiene su configuración
+
+**Ver documentación completa:** [INSTANCIAS_POR_UBICACION.md](INSTANCIAS_POR_UBICACION.md)
+
+### ✅ Ventajas
+
+- ✅ **Un solo archivo** para backup (contiene todas las configuraciones)
+- ✅ **Configuraciones independientes** por ubicación del ejecutable
+- ✅ **Fácil de copiar:** Copiar carpeta = Nueva instancia
+- ✅ **Portable:** Funciona desde cualquier ubicación (USB, red, etc.)
+- ✅ **Sin conflictos:** Cada ubicación tiene su configuración única
 
 ## 🔧 Configuración Avanzada
 

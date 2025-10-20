@@ -4,6 +4,33 @@
 
 Esta aplicación **permite ejecutar múltiples instancias simultáneamente**, cada una con su propia configuración independiente.
 
+## 📁 Ubicación de la Configuración
+
+### En Desarrollo (código sin compilar):
+
+```
+C:\Users\TuUsuario\Desktop\webrtc-audio-out\
+└── config.json
+```
+
+### En Producción (aplicación instalada/compilada):
+
+```
+Windows:
+C:\Users\TuUsuario\AppData\Roaming\webrtc-audio-out\
+└── config.json
+
+macOS:
+~/Library/Application Support/webrtc-audio-out/
+└── config.json
+
+Linux:
+~/.config/webrtc-audio-out/
+└── config.json
+```
+
+**Nota:** La aplicación compilada guarda la configuración en la carpeta `userData` de Electron para asegurar permisos de escritura. Cada usuario de Windows tendrá su propia configuración independiente.
+
 ## 🎯 ¿Para qué sirve?
 
 ### Casos de uso comunes:

@@ -33,26 +33,48 @@ app.releaseSingleInstanceLock();
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
-// Usar configuración local (en la carpeta del ejecutable)
-// Esto permite múltiples instancias con configuraciones independientes
-// En desarrollo: usa __dirname (carpeta del proyecto)
-// En producción: usa process.resourcesPath o app.getAppPath()
+// === 📁 CONFIGURACIÓN POR INSTANCIA ===
+// Cada instancia usa su ubicación como identificador único
+// Esto permite copiar el ejecutable a diferentes carpetas y tener configs independientes
+
+// Obtener la ruta del ejecutable (sin el nombre del archivo)
+const executablePath = app.isPackaged
+  ? path.dirname(process.execPath)
+  : __dirname;
+
+// Normalizar la ruta para usarla como clave (reemplazar caracteres problemáticos)
+const instanceKey = executablePath
+  .replace(/\\/g, "/") // Convertir \ a /
+  .replace(/:/g, "") // Quitar : de C:
+  .replace(/\//g, "_") // Convertir / a _
+  .toLowerCase(); // Minúsculas para consistencia
+
+console.log("📂 Ejecutable ubicado en:", executablePath);
+console.log("🔑 Clave de instancia:", instanceKey);
+
+// Determinar la ruta del archivo de configuración central
 let configPath;
 if (app.isPackaged) {
-  // Producción: usar la carpeta donde está el ejecutable
-  // Para portable: usar process.execPath
-  // Para instalado: usar app.getAppPath() para que quede en resources/app
-  const appDir = path.dirname(process.execPath);
-  configPath = path.join(appDir, "config.json");
+  // Producción: usar userData (escribible y persistente)
+  // En Windows: C:\Users\<Usuario>\AppData\Roaming\webrtc-audio-out\config.json
+  const userDataPath = app.getPath("userData");
+  configPath = path.join(userDataPath, "config.json");
 } else {
   // Desarrollo: usar la carpeta del proyecto
   configPath = path.join(__dirname, "config.json");
 }
 
-const configManager = new ConfigManager(configPath);
+// Crear ConfigManager con la clave única de esta instancia
+const configManager = new ConfigManager(configPath, instanceKey);
 
-console.log("📁 Archivo de configuración:", configManager.getConfigPath());
+console.log(
+  "📁 Archivo de configuración central:",
+  configManager.getConfigPath()
+);
 console.log("🔓 Múltiples instancias: ACTIVADO");
+console.log(
+  "💾 Las configuraciones se guardan indexadas por ubicación del ejecutable"
+);
 
 // IPC handlers para get/set de configuración
 ipcMain.handle("config-get", (event, key, defVal = null) => {
@@ -61,6 +83,16 @@ ipcMain.handle("config-get", (event, key, defVal = null) => {
 
 ipcMain.handle("config-set", (event, key, val) => {
   return configManager.set(key, val);
+});
+
+// IPC handler para obtener información de la instancia
+ipcMain.handle("get-instance-info", () => {
+  return {
+    executablePath: executablePath,
+    instanceKey: instanceKey,
+    configPath: configManager.getConfigPath(),
+    allInstances: configManager.listInstances(),
+  };
 });
 
 // IPC handler para configurar autostart

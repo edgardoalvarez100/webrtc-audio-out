@@ -892,9 +892,22 @@
             <div class="card-title">🔗 Configuración de Conexión</div>
             <div class="row full">
                 <div class="row">
-                    <label class="label" for="urlInput">URL WHEP:</label>
+                    <label class="label" for="urlInput">
+                        <span id="primaryUrlIndicator" style="color: var(--text-secondary); margin-right: 4px;"
+                            title="URL Primaria">○</span>
+                        URL WHEP Primaria:
+                    </label>
                     <input id="urlInput" type="text"
                         placeholder="https://example.com:1935/rtc/v1/whep/?app=live&stream=audiostream" />
+                </div>
+                <div class="row" id="failoverUrlRow" style="display: none;">
+                    <label class="label" for="urlFailoverInput">
+                        <span id="failoverUrlIndicator" style="color: var(--text-secondary); margin-right: 4px;"
+                            title="URL Failover">○</span>
+                        URL WHEP Failover:
+                    </label>
+                    <input id="urlFailoverInput" type="text"
+                        placeholder="https://backup.example.com:1935/rtc/v1/whep/?app=live&stream=audiostream" />
                 </div>
             </div>
         </div>
@@ -1148,6 +1161,23 @@
                     </div>
                     <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); padding-left: 12px;">
                         💡 La aplicación se conectará automáticamente a la URL WHEP guardada
+                    </div>
+                </div>
+
+                <!-- Failover URL -->
+                <div class="config-option">
+                    <div class="config-option-title">🔄 URL Failover (Respaldo)</div>
+                    <div class="toggle-option">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="failoverToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="toggle-label">Activar URL de respaldo automático</span>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); padding-left: 12px;">
+                        💡 Si la conexión primaria falla, cambia automáticamente al servidor de respaldo
+                        <br>
+                        🔍 Verifica cada 60 segundos si el servidor primario vuelve a estar disponible
                     </div>
                 </div>
             </div>

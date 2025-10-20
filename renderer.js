@@ -32,23 +32,38 @@
   const autostartToggle = document.getElementById("autostartToggle");
   const debugToggle = document.getElementById("debugToggle");
   const autoConnectToggle = document.getElementById("autoConnectToggle");
+  const failoverToggle = document.getElementById("failoverToggle");
+  const urlFailoverInput = document.getElementById("urlFailoverInput");
+  const failoverUrlRow = document.getElementById("failoverUrlRow");
+  const primaryUrlIndicator = document.getElementById("primaryUrlIndicator");
+  const failoverUrlIndicator = document.getElementById("failoverUrlIndicator");
   const fontSizeBtns = document.querySelectorAll(".font-size-btn");
 
   // Configuración por defecto
   const DEFAULT_WHEP_URL =
     "https://example.com:1935/rtc/v1/whep/?app=live&stream=audiostream";
+  const DEFAULT_FAILOVER_URL = "";
   const DEFAULT_RECONNECT_MS = 3000;
   const DEFAULT_VOLUME = 100;
   const DEFAULT_DEBUG = false;
   const DEFAULT_AUTO_CONNECT = false;
+  const DEFAULT_FAILOVER_ENABLED = false;
 
   let WHEP_URL = "";
+  let WHEP_FAILOVER_URL = "";
+  let FAILOVER_ENABLED = DEFAULT_FAILOVER_ENABLED;
   let RECONNECT_MS = DEFAULT_RECONNECT_MS;
   let VOLUME = DEFAULT_VOLUME;
   let DEBUG_MODE = DEFAULT_DEBUG;
   let AUTO_CONNECT = DEFAULT_AUTO_CONNECT;
   let pc = null;
   let abortReconnect = false;
+
+  // Variables para failover
+  let isUsingFailover = false; // true si está conectado a la URL failover
+  let primaryHealthCheckInterval = null; // Interval para verificar el primario
+  let lastPrimaryCheck = 0; // Timestamp del último check
+  const PRIMARY_CHECK_INTERVAL = 60000; // 60 segundos
 
   // AudioContext para control de volumen
   let audioCtx = null;
@@ -155,17 +170,31 @@
         "AUTO_CONNECT",
         String(DEFAULT_AUTO_CONNECT)
       );
+      const savedFailoverEnabled = await window.webrtcCfg.get(
+        "FAILOVER_ENABLED",
+        String(DEFAULT_FAILOVER_ENABLED)
+      );
+      const savedFailoverUrl = await window.webrtcCfg.get(
+        "WHEP_FAILOVER_URL",
+        DEFAULT_FAILOVER_URL
+      );
 
       WHEP_URL = savedUrl;
+      WHEP_FAILOVER_URL = savedFailoverUrl;
+      FAILOVER_ENABLED =
+        savedFailoverEnabled === "true" || savedFailoverEnabled === true;
       RECONNECT_MS = parseInt(savedReconnect, 10);
       VOLUME = parseInt(savedVolume, 10);
       DEBUG_MODE = savedDebug === "true" || savedDebug === true;
       AUTO_CONNECT = savedAutoConnect === "true" || savedAutoConnect === true;
 
       urlInput.value = WHEP_URL;
+      urlFailoverInput.value = WHEP_FAILOVER_URL;
       volumeSlider.value = VOLUME;
       debugToggle.checked = DEBUG_MODE;
       autoConnectToggle.checked = AUTO_CONNECT;
+      failoverToggle.checked = FAILOVER_ENABLED;
+      updateFailoverUI();
       updateVolumeDisplay();
 
       if (DEBUG_MODE) {
@@ -174,16 +203,159 @@
     } catch (e) {
       console.error("Error al cargar config:", e);
       WHEP_URL = DEFAULT_WHEP_URL;
+      WHEP_FAILOVER_URL = DEFAULT_FAILOVER_URL;
+      FAILOVER_ENABLED = DEFAULT_FAILOVER_ENABLED;
       VOLUME = DEFAULT_VOLUME;
       DEBUG_MODE = DEFAULT_DEBUG;
       AUTO_CONNECT = DEFAULT_AUTO_CONNECT;
       urlInput.value = WHEP_URL;
+      urlFailoverInput.value = WHEP_FAILOVER_URL;
       volumeSlider.value = VOLUME;
       debugToggle.checked = DEBUG_MODE;
       autoConnectToggle.checked = AUTO_CONNECT;
+      failoverToggle.checked = FAILOVER_ENABLED;
+      updateFailoverUI();
       updateVolumeDisplay();
     }
   }
+
+  // ========== FUNCIONES DE FAILOVER ==========
+
+  // Actualizar UI del failover
+  function updateFailoverUI() {
+    if (FAILOVER_ENABLED) {
+      failoverUrlRow.style.display = "";
+    } else {
+      failoverUrlRow.style.display = "none";
+    }
+    updateUrlIndicators();
+  }
+
+  // Actualizar indicadores visuales de URL activa
+  function updateUrlIndicators() {
+    if (pc && isUsingFailover) {
+      // Conectado al failover
+      primaryUrlIndicator.textContent = "○";
+      primaryUrlIndicator.style.color = "var(--text-secondary)";
+      primaryUrlIndicator.title = "URL Primaria (inactiva)";
+
+      failoverUrlIndicator.textContent = "✓";
+      failoverUrlIndicator.style.color = "var(--accent-green)";
+      failoverUrlIndicator.title = "URL Failover (activa)";
+    } else if (pc && !isUsingFailover) {
+      // Conectado al primario
+      primaryUrlIndicator.textContent = "✓";
+      primaryUrlIndicator.style.color = "var(--accent-green)";
+      primaryUrlIndicator.title = "URL Primaria (activa)";
+
+      failoverUrlIndicator.textContent = "○";
+      failoverUrlIndicator.style.color = "var(--text-secondary)";
+      failoverUrlIndicator.title = "URL Failover (inactiva)";
+    } else {
+      // Desconectado
+      primaryUrlIndicator.textContent = "○";
+      primaryUrlIndicator.style.color = "var(--text-secondary)";
+      primaryUrlIndicator.title = "URL Primaria";
+
+      failoverUrlIndicator.textContent = "○";
+      failoverUrlIndicator.style.color = "var(--text-secondary)";
+      failoverUrlIndicator.title = "URL Failover";
+    }
+  }
+
+  // Verificar si una URL está disponible (health check)
+  async function checkUrlHealth(url) {
+    try {
+      debugLog(`🔍 Verificando salud de URL: ${url}`);
+
+      // Crear un PeerConnection temporal para verificar
+      const testPc = new RTCPeerConnection({
+        iceServers: [],
+      });
+
+      // Agregar un transceiver para audio
+      testPc.addTransceiver("audio", { direction: "recvonly" });
+
+      // Crear oferta
+      const offer = await testPc.createOffer();
+      await testPc.setLocalDescription(offer);
+
+      // Intentar hacer POST a la URL WHEP
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/sdp" },
+        body: offer.sdp,
+      });
+
+      testPc.close();
+
+      if (response.ok) {
+        debugLog(`✅ URL disponible: ${url}`);
+        return true;
+      } else {
+        debugLog(`❌ URL no disponible (${response.status}): ${url}`);
+        return false;
+      }
+    } catch (error) {
+      debugLog(`❌ Error verificando URL: ${url}`, error);
+      return false;
+    }
+  }
+
+  // Iniciar monitoreo del primario cuando se está en failover
+  function startPrimaryHealthCheck() {
+    if (primaryHealthCheckInterval) {
+      clearInterval(primaryHealthCheckInterval);
+    }
+
+    debugLog("🔍 Iniciando monitoreo del servidor primario...");
+
+    primaryHealthCheckInterval = setInterval(async () => {
+      if (!isUsingFailover || !pc || !FAILOVER_ENABLED) {
+        // No tiene sentido verificar si no estamos en failover
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastPrimaryCheck < PRIMARY_CHECK_INTERVAL) {
+        return;
+      }
+
+      lastPrimaryCheck = now;
+      debugLog("🔍 Verificando si el servidor primario está disponible...");
+
+      const isPrimaryAvailable = await checkUrlHealth(WHEP_URL);
+
+      if (isPrimaryAvailable) {
+        debugLog("✅ Servidor primario disponible, reconectando...");
+
+        // Desconectar del failover y reconectar al primario
+        isUsingFailover = false;
+        stopPrimaryHealthCheck();
+
+        // Reconectar
+        if (pc) {
+          disconnectWHEP();
+          setTimeout(() => {
+            connectWHEP();
+          }, 1000);
+        }
+      } else {
+        debugLog("⏳ Servidor primario aún no disponible");
+      }
+    }, 10000); // Verificar cada 10 segundos (más agresivo que los 60s)
+  }
+
+  // Detener monitoreo del primario
+  function stopPrimaryHealthCheck() {
+    if (primaryHealthCheckInterval) {
+      clearInterval(primaryHealthCheckInterval);
+      primaryHealthCheckInterval = null;
+      debugLog("⏹️ Monitoreo del servidor primario detenido");
+    }
+  }
+
+  // ========== FIN FUNCIONES DE FAILOVER ==========
 
   // Guardar URL cuando cambie
   urlInput.addEventListener("blur", async () => {
@@ -201,6 +373,53 @@
   urlInput.addEventListener("keypress", async (e) => {
     if (e.key === "Enter") {
       urlInput.blur();
+    }
+  });
+
+  // Guardar URL Failover cuando cambie
+  urlFailoverInput.addEventListener("blur", async () => {
+    const newUrl = urlFailoverInput.value.trim();
+    WHEP_FAILOVER_URL = newUrl;
+    await window.webrtcCfg.set("WHEP_FAILOVER_URL", WHEP_FAILOVER_URL);
+    if (newUrl) {
+      setStatus("URL failover guardada", "ok");
+      setTimeout(() => {
+        if (!pc) setStatus("desconectado", "muted");
+      }, 2000);
+    }
+  });
+
+  urlFailoverInput.addEventListener("keypress", async (e) => {
+    if (e.key === "Enter") {
+      urlFailoverInput.blur();
+    }
+  });
+
+  // Toggle Failover activado/desactivado
+  failoverToggle.addEventListener("change", async () => {
+    FAILOVER_ENABLED = failoverToggle.checked;
+    await window.webrtcCfg.set("FAILOVER_ENABLED", FAILOVER_ENABLED);
+    updateFailoverUI();
+
+    const status = FAILOVER_ENABLED
+      ? "Failover activado"
+      : "Failover desactivado";
+    setStatus(status, "ok");
+    setTimeout(() => {
+      if (!pc) setStatus("desconectado", "muted");
+    }, 2000);
+
+    if (!FAILOVER_ENABLED) {
+      // Si se desactiva el failover mientras está en uso, volver al primario
+      if (isUsingFailover && pc) {
+        debugLog("⚠️ Failover desactivado, reconectando a primario...");
+        isUsingFailover = false;
+        stopPrimaryHealthCheck();
+        disconnectWHEP();
+        setTimeout(() => {
+          connectWHEP();
+        }, 1000);
+      }
     }
   });
 
@@ -2078,15 +2297,29 @@
     await applySink(outSel.value);
   }
 
-  async function connectWHEP() {
+  async function connectWHEP(useFailover = false) {
+    // Determinar qué URL usar
+    let targetUrl = WHEP_URL;
+    if (useFailover && FAILOVER_ENABLED && WHEP_FAILOVER_URL) {
+      targetUrl = WHEP_FAILOVER_URL;
+      isUsingFailover = true;
+      debugLog("🔄 Conectando a URL Failover:", targetUrl);
+    } else {
+      isUsingFailover = false;
+      debugLog("🔗 Conectando a URL Primaria:", targetUrl);
+    }
+
     // Validar URL
-    const url = urlInput.value.trim();
-    if (!url) {
+    if (!targetUrl) {
       setStatus("Por favor ingresa una URL WHEP", "bad");
       return;
     }
-    WHEP_URL = url;
-    await window.webrtcCfg.set("WHEP_URL", WHEP_URL);
+
+    // Actualizar URL input visual (solo para guardar en config)
+    if (!useFailover) {
+      WHEP_URL = urlInput.value.trim() || WHEP_URL;
+      await window.webrtcCfg.set("WHEP_URL", WHEP_URL);
+    }
 
     setStatus("conectando…", "muted");
     abortReconnect = false;
@@ -2184,8 +2417,17 @@
         }
       }, 1500);
 
-      setStatus("reproduciendo ✓", "ok");
+      const statusMsg = isUsingFailover
+        ? "reproduciendo (failover) ✓"
+        : "reproduciendo ✓";
+      setStatus(statusMsg, "ok");
       updateConnectButton(true);
+      updateUrlIndicators();
+
+      // Si conectamos con failover, iniciar monitoreo del primario
+      if (isUsingFailover) {
+        startPrimaryHealthCheck();
+      }
 
       // Iniciar temporizador de conexión
       startConnectionTimer();
@@ -2220,7 +2462,7 @@
 
     let resp;
     try {
-      resp = await fetch(WHEP_URL, {
+      resp = await fetch(targetUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/sdp",
@@ -2230,6 +2472,24 @@
       });
     } catch (e) {
       console.error("WHEP fetch() network error:", e);
+
+      // Si falla el primario y hay failover disponible, intentar con failover
+      if (!useFailover && FAILOVER_ENABLED && WHEP_FAILOVER_URL) {
+        debugLog("⚠️ Primario falló, intentando con failover...");
+        setStatus("primario falló, probando failover…", "muted");
+
+        // Limpiar PC actual
+        if (pc) {
+          try {
+            pc.close();
+          } catch {}
+          pc = null;
+        }
+
+        // Intentar con failover
+        return connectWHEP(true);
+      }
+
       setStatus("error de red: " + (e?.message || "network"), "bad");
       throw e;
     }
@@ -2237,6 +2497,26 @@
     if (!resp.ok) {
       const txt = await resp.text().catch(() => "");
       console.error("WHEP HTTP error", resp.status, txt);
+
+      // Si falla el primario y hay failover disponible, intentar con failover
+      if (!useFailover && FAILOVER_ENABLED && WHEP_FAILOVER_URL) {
+        debugLog(
+          `⚠️ Primario respondió ${resp.status}, intentando con failover...`
+        );
+        setStatus(`primario error ${resp.status}, probando failover…`, "muted");
+
+        // Limpiar PC actual
+        if (pc) {
+          try {
+            pc.close();
+          } catch {}
+          pc = null;
+        }
+
+        // Intentar con failover
+        return connectWHEP(true);
+      }
+
       setStatus(`Error HTTP ${resp.status}`, "bad");
       throw new Error(`WHEP ${resp.status} ${txt}`);
     }
@@ -2276,7 +2556,10 @@
       }
     });
 
-    setStatus("conectado ✓", "ok");
+    const statusMsg = isUsingFailover
+      ? "conectado (failover) ✓"
+      : "conectado ✓";
+    setStatus(statusMsg, "ok");
   }
 
   function cleanupAndMaybeReconnect() {
@@ -2318,6 +2601,13 @@
 
     // Detener temporizador de conexión
     stopConnectionTimer();
+
+    // Detener health check del primario si está activo
+    stopPrimaryHealthCheck();
+
+    // Resetear flag de failover
+    isUsingFailover = false;
+    updateUrlIndicators();
 
     // Solo limpiar el stream, NO los nodos de audio (se reutilizan)
     audioEl.srcObject = null;
