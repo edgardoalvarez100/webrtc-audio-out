@@ -1,6 +1,6 @@
 {
   "name": "webrtc-audio-out",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Cliente WebRTC que recibe audio por WHEP y lo envía a una tarjeta de audio específica con reconexión automática.",
   "main": "main.js",
   "private": true,

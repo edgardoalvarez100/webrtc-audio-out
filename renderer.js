@@ -153,6 +153,16 @@
   // Cargar configuración guardada
   async function loadConfig() {
     try {
+      // Cargar y mostrar la versión de la aplicación
+      try {
+        const version = await window.webrtcCfg.getAppVersion();
+        document.getElementById(
+          "appVersion"
+        ).textContent = `WebRTC Audio Out v${version}`;
+      } catch (err) {
+        console.error("Error cargando versión de la aplicación:", err);
+      }
+
       const savedUrl = await window.webrtcCfg.get("WHEP_URL", DEFAULT_WHEP_URL);
       const savedReconnect = await window.webrtcCfg.get(
         "RECONNECT_MS",

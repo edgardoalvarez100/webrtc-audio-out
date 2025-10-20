@@ -8,6 +8,7 @@ const {
 const path = require("path");
 const { autoUpdater } = require("electron-updater");
 const ConfigManager = require("./config");
+const packageJson = require("./package.json");
 
 // === 🧱 FLAGS PARA EVITAR ERRORES DE GPU CACHE ===
 app.commandLine.appendSwitch("disable-gpu");
@@ -93,6 +94,11 @@ ipcMain.handle("get-instance-info", () => {
     configPath: configManager.getConfigPath(),
     allInstances: configManager.listInstances(),
   };
+});
+
+// IPC handler para obtener la versión de la aplicación
+ipcMain.handle("get-app-version", () => {
+  return packageJson.version;
 });
 
 // IPC handler para configurar autostart
