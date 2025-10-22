@@ -1,6 +1,6 @@
 {
   "name": "webrtc-audio-out",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Cliente WebRTC que recibe audio por WHEP y lo envía a una tarjeta de audio específica con reconexión automática.",
   "main": "main.js",
   "private": true,
@@ -15,7 +15,7 @@
     "build-win-portable": "electron-builder --win portable --x64",
     "build-mac": "electron-builder --mac",
     "build-linux": "electron-builder --linux",
-    "publish": "electron-builder --win --x64 --publish always"
+    "publish": "electron-builder --win nsis portable --x64 --publish always"
   },
   "build": {
     "appId": "com.edgardoalvarez.webrtc-audio-out",
@@ -37,6 +37,12 @@
       "target": [
         {
           "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
           "arch": [
             "x64"
           ]
